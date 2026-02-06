@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Museo 3D – Stanza vuota</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#000}
+canvas{width:100%;height:100%;display:block;touch-action:none}
+#overlay{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center;z-index:10}
+#overlay img{max-width:100%;max-height:100%;border-radius:12px}
+#hint{position:fixed;bottom:10px;left:0;right:0;text-align:center;color:#ccc;font-family:sans-serif;font-size:14px}
+</style>
+</head>
+<body>
+<div id="overlay"><img id="full"><div id="hint">Tap per tornare</div></div>
+
+<script type="module">
+import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(65, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(0,1.6,5);
+camera.rotation.order="YXZ";
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// Room
+const tex = new THREE.TextureLoader().load("assets/room.jpg");
+tex.colorSpace = THREE.SRGBColorSpace;
+
+const room = new THREE.Mesh(
+  new THREE.BoxGeometry(18,6,18),
+  new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide })
+);
+scene.add(room);
+
+// Light
+scene.add(new THREE.AmbientLight(0xffffff,0.7));
+
+// Artworks
+const rayTargets=[];
+const loader=new THREE.TextureLoader();
+const files=["Filosofia-base.PNG", "Leopardi-storico1.png", "IMG_4016.png", "IMG_4011.png", "IMG_4018.png", "IMG_4019.png", "IMG_4021.png", "IMG_4023.png", "IMG_4027.png"];
+
+files.forEach((f,i)=>{
+  const t=loader.load("assets/"+f);
+  t.colorSpace=THREE.SRGBColorSpace;
+
+  const frame = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.4,1.6),
+    new THREE.MeshStandardMaterial({ map: t })
+  );
+
+  const y = 2.1;
+  if(i%2===0){
+    frame.position.set(-8.8, y, -4 + (i%5)*2);
+    frame.rotation.y = Math.PI/2;
+  } else {
+    frame.position.set(8.8, y, -4 + (i%5)*2);
+    frame.rotation.y = -Math.PI/2;
+  }
+
+  scene.add(frame);
+  frame.userData={ file: f };
+  rayTargets.push(frame);
+});
+
+// Interaction
+const overlay=document.getElementById("overlay");
+const full=document.getElementById("full");
+overlay.onclick=()=>overlay.style.display="none";
+
+const ray=new THREE.Raycaster();
+const mouse=new THREE.Vector2();
+
+function pick(x,y){
+  mouse.x=(x/innerWidth)*2-1;
+  mouse.y=-(y/innerHeight)*2+1;
+  ray.setFromCamera(mouse,camera);
+  const hit=ray.intersectObjects(rayTargets);
+  if(hit.length){
+    full.src="assets/"+hit[0].object.userData.file;
+    overlay.style.display="flex";
+  }
+}
+
+// Touch look
+let yaw=0,pitch=0;
+renderer.domElement.onpointermove=e=>{
+  if(e.buttons){
+    yaw-=e.movementX*0.003;
+    pitch-=e.movementY*0.003;
+    pitch=Math.max(-1.3,Math.min(1.3,pitch));
+    camera.rotation.set(pitch,yaw,0);
+  }
+};
+renderer.domElement.onpointerup=e=>pick(e.clientX,e.clientY);
+
+function animate(){
+  renderer.render(scene,camera);
+  requestAnimationFrame(animate);
+}
+animate();
+
+onresize=()=>{
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+};
+</script>
+</body>
+</html>
