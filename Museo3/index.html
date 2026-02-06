@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Museo 3D – iPad (stanza A)</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#000}
+canvas{width:100%;height:100%;display:block;touch-action:none}
+#overlay{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center;z-index:10}
+#overlay img{max-width:100%;max-height:100%;border-radius:12px}
+#hud{position:fixed;left:0;right:0;bottom:10px;text-align:center;color:#ddd;
+font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:13px;z-index:5;
+text-shadow:0 1px 2px rgba(0,0,0,.7);}
+.badge{display:inline-block;padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.35);backdrop-filter: blur(6px);}
+</style>
+</head>
+<body>
+<div id="overlay"><img id="full"></div>
+<div id="hud"><span class="badge">1 dito: guarda · 2 dita: cammina · Tap quadro: fullscreen</span></div>
+
+<script type="module">
+import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
+
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(65, innerWidth/innerHeight, 0.1, 80);
+camera.position.set(0, 1.65, 4.5);
+camera.rotation.order = "YXZ";
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// Textures
+const loader = new THREE.TextureLoader();
+const wallsTex = loader.load("assets/walls.jpg");
+wallsTex.colorSpace = THREE.SRGBColorSpace;
+
+// Light
+scene.add(new THREE.AmbientLight(0xffffff, 0.92));
+
+// Floor + ceiling textures (procedural, light)
+function makeFloorTexture() {
+  const c=document.createElement("canvas"); c.width=1024; c.height=1024;
+  const g=c.getContext("2d");
+  g.fillStyle="#7b5b3b"; g.fillRect(0,0,c.width,c.height);
+  const plankW=128;
+  for(let y=0;y<c.height;y+=64){
+    for(let x=0;x<c.width;x+=plankW){
+      const v=(Math.random()*18-9);
+      g.fillStyle=`rgb(${123+v},${91+v},${59+v})`;
+      g.fillRect(x,y,plankW,64);
+      g.strokeStyle="rgba(0,0,0,.10)";
+      g.strokeRect(x,y,plankW,64);
+    }
+  }
+  const grad=g.createLinearGradient(0,0,0,c.height);
+  grad.addColorStop(0,"rgba(255,255,255,.08)");
+  grad.addColorStop(1,"rgba(0,0,0,.12)");
+  g.fillStyle=grad; g.fillRect(0,0,c.width,c.height);
+  const tex=new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
+  tex.repeat.set(1.7,1.7);
+  return tex;
+}
+
+function makeCeilingTexture() {
+  const c=document.createElement("canvas"); c.width=512; c.height=512;
+  const g=c.getContext("2d");
+  g.fillStyle="#f3f1eb"; g.fillRect(0,0,c.width,c.height);
+  const grad=g.createRadialGradient(256,256,40,256,256,340);
+  grad.addColorStop(0,"rgba(255,255,255,.0)");
+  grad.addColorStop(1,"rgba(0,0,0,.07)");
+  g.fillStyle=grad; g.fillRect(0,0,c.width,c.height);
+  const tex=new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+const floorTex = makeFloorTexture();
+const ceilTex  = makeCeilingTexture();
+
+// Room with separate planes (no z-fighting)
+const ROOM = { w: 18, h: 6, d: 18 };
+const hw = ROOM.w/2, hh = ROOM.h/2, hd = ROOM.d/2;
+
+function addPlane(width, height, pos, rotX, rotY, mapTex) {
+  const geo = new THREE.PlaneGeometry(width, height);
+  const mat = new THREE.MeshBasicMaterial({ map: mapTex, side: THREE.DoubleSide });
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(pos.x, pos.y, pos.z);
+  m.rotation.set(rotX, rotY, 0);
+  scene.add(m);
+  return m;
+}
+
+// Walls
+addPlane(ROOM.d, ROOM.h, {x:-hw, y:hh, z:0}, 0,  Math.PI/2,  wallsTex); // left
+addPlane(ROOM.d, ROOM.h, {x: hw, y:hh, z:0}, 0, -Math.PI/2,  wallsTex); // right
+addPlane(ROOM.w, ROOM.h, {x:0, y:hh, z:-hd}, 0, 0,          wallsTex); // back
+addPlane(ROOM.w, ROOM.h, {x:0, y:hh, z: hd}, 0, Math.PI,    wallsTex); // front
+
+// Floor / ceiling
+addPlane(ROOM.w, ROOM.d, {x:0, y:0.01, z:0}, -Math.PI/2, 0, floorTex);
+addPlane(ROOM.w, ROOM.d, {x:0, y:ROOM.h, z:0},  Math.PI/2, 0, ceilTex);
+
+// Artworks: thick boxes + front plane (stable on iPad)
+const rayTargets = [];
+const placements = [{"file": "Filosofia-base.PNG", "x": -8.85, "z": -6.0, "y": 2.15, "ry": 1.5707963267948966}, {"file": "Leopardi-storico1.png", "x": -8.85, "z": -2.0, "y": 2.15, "ry": 1.5707963267948966}, {"file": "IMG_4016.png", "x": -8.85, "z": 2.0, "y": 2.15, "ry": 1.5707963267948966}, {"file": "IMG_4011.png", "x": -8.85, "z": 6.0, "y": 2.15, "ry": 1.5707963267948966}, {"file": "IMG_4018.png", "x": 8.85, "z": -6.0, "y": 2.15, "ry": -1.5707963267948966}, {"file": "IMG_4019.png", "x": 8.85, "z": -2.0, "y": 2.15, "ry": -1.5707963267948966}, {"file": "IMG_4021.png", "x": 8.85, "z": 2.0, "y": 2.15, "ry": -1.5707963267948966}, {"file": "IMG_4023.png", "x": 8.85, "z": 6.0, "y": 2.15, "ry": -1.5707963267948966}, {"file": "IMG_4027.png", "x": -4.0, "z": -8.85, "y": 2.15, "ry": 0.0}];
+
+function addArtwork(p) {
+  const tex = loader.load("assets/" + p.file);
+  tex.colorSpace = THREE.SRGBColorSpace;
+
+  const w = 2.55, h = 1.70, depth = 0.06;
+  const boxGeo = new THREE.BoxGeometry(w, h, depth);
+  const frameMat = new THREE.MeshStandardMaterial({ color: 0x2b2116, roughness: 0.95, metalness: 0.0 });
+  const box = new THREE.Mesh(boxGeo, frameMat);
+
+  const frontMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, metalness: 0.0 });
+  const artPlane = new THREE.Mesh(new THREE.PlaneGeometry(w*0.96, h*0.96), frontMat);
+  artPlane.position.set(0, 0, depth/2 + 0.002);
+  box.add(artPlane);
+
+  box.position.set(p.x, p.y, p.z);
+  box.rotation.y = p.ry;
+
+  const off = 0.18; // IMPORTANT: far from wall => no flicker
+  box.position.x += Math.cos(p.ry) * off;
+  box.position.z += Math.sin(p.ry) * off;
+
+  box.userData = { file: p.file };
+  scene.add(box);
+  rayTargets.push(box);
+}
+
+placements.forEach(addArtwork);
+
+// Fullscreen overlay
+const overlay = document.getElementById("overlay");
+const full = document.getElementById("full");
+overlay.onclick = () => overlay.style.display = "none";
+
+const ray = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+function pick(clientX, clientY) {
+  mouse.x = (clientX / innerWidth) * 2 - 1;
+  mouse.y = -(clientY / innerHeight) * 2 + 1;
+  ray.setFromCamera(mouse, camera);
+  const hit = ray.intersectObjects(rayTargets, true);
+  if (hit.length) {
+    let o = hit[0].object;
+    while (o && !o.userData?.file) o = o.parent;
+    if (!o) return;
+    full.src = "assets/" + o.userData.file;
+    overlay.style.display = "flex";
+  }
+}
+
+// Touch controls
+let yaw = 0, pitch = 0;
+const pointers = new Map();
+let lastMid = null;
+let lastTap = null;
+
+function clamp(v,a,b){ return Math.max(a, Math.min(b,v)); }
+function dist(a,b){ const dx=a.x-b.x, dy=a.y-b.y; return Math.sqrt(dx*dx+dy*dy); }
+
+function updateRotation(dx,dy) {
+  yaw  -= dx * 0.0032;
+  pitch-= dy * 0.0032;
+  pitch = clamp(pitch, -1.25, 1.25);
+  camera.rotation.set(pitch, yaw, 0);
+}
+
+function moveCamera(dx, dy) {
+  const speed = 0.0105;
+  const forward = new THREE.Vector3(0,0,-1).applyEuler(camera.rotation);
+  forward.y = 0; forward.normalize();
+  const right = new THREE.Vector3(1,0,0).applyEuler(camera.rotation);
+  right.y = 0; right.normalize();
+
+  camera.position.addScaledVector(forward, -dy * speed);
+  camera.position.addScaledVector(right,   dx * speed);
+
+  camera.position.x = clamp(camera.position.x, -7.6, 7.6);
+  camera.position.z = clamp(camera.position.z, -7.6, 7.6);
+}
+
+renderer.domElement.addEventListener("pointerdown", (e)=>{
+  renderer.domElement.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if (pointers.size === 1) lastTap = {x:e.clientX, y:e.clientY, t: performance.now()};
+  if (pointers.size === 2) {
+    const arr=[...pointers.values()];
+    lastMid = {x:(arr[0].x+arr[1].x)/2, y:(arr[0].y+arr[1].y)/2};
+  }
+});
+
+renderer.domElement.addEventListener("pointermove", (e)=>{
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+
+  if (pointers.size === 1) {
+    updateRotation(e.movementX, e.movementY);
+  } else if (pointers.size === 2) {
+    const arr=[...pointers.values()];
+    const mid={x:(arr[0].x+arr[1].x)/2, y:(arr[0].y+arr[1].y)/2};
+    if (lastMid) moveCamera(mid.x-lastMid.x, mid.y-lastMid.y);
+    lastMid = mid;
+  }
+});
+
+renderer.domElement.addEventListener("pointerup", (e)=>{
+  const wasSingle = pointers.size === 1;
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) lastMid = null;
+
+  if (wasSingle && lastTap && overlay.style.display !== "flex") {
+    const dt = performance.now() - lastTap.t;
+    const d  = dist(lastTap, {x:e.clientX, y:e.clientY});
+    if (dt < 300 && d < 10) pick(e.clientX, e.clientY);
+  }
+});
+
+renderer.domElement.addEventListener("pointercancel", (e)=>{
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) lastMid = null;
+});
+
+function animate(){
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+animate();
+
+onresize=()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+};
+</script>
+</body>
+</html>
