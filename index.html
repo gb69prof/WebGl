@@ -2,73 +2,54 @@
 <html lang="it">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
-  <title>Stanza 3D - Museo (WebGL/Three.js)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>Museo 3D iPad — touch only</title>
   <style>
     html, body { margin:0; height:100%; overflow:hidden; background:#0b0c10; }
+    canvas { display:block; width:100%; height:100%; touch-action:none; }
+
     #hud{
       position:fixed; left:12px; top:12px; z-index:10;
       font:14px/1.35 system-ui, -apple-system, Segoe UI, Roboto, Arial;
       color:#e6e6e6; background:rgba(0,0,0,.45);
       padding:10px 12px; border-radius:12px; backdrop-filter: blur(8px);
-      max-width: 520px;
-      user-select:none;
+      max-width: 520px; user-select:none;
     }
     #hud b{ color:#ffd66b; }
-    #hint{ opacity:.9; margin-top:6px; }
+    #hud .small{ opacity:.9; margin-top:6px; }
+
     #panel{
-      position:fixed; right:12px; top:12px; z-index:10;
-      width:min(420px, calc(100% - 24px));
-      color:#e6e6e6; background:rgba(0,0,0,.55);
-      padding:12px 14px; border-radius:12px; backdrop-filter: blur(10px);
+      position:fixed; left:12px; right:12px; bottom:12px; z-index:10;
+      color:#e6e6e6; background:rgba(0,0,0,.58);
+      padding:12px 14px; border-radius:14px; backdrop-filter: blur(10px);
       display:none;
       font:14px/1.45 system-ui, -apple-system, Segoe UI, Roboto, Arial;
     }
     #panel h3{ margin:0 0 8px 0; color:#ffd66b; font-size:16px; }
     #panel p{ margin:0 0 10px 0; opacity:.95; }
     #panel button{
-      border:0; border-radius:10px; padding:8px 10px;
-      background:#222; color:#fff; cursor:pointer;
+      border:0; border-radius:12px; padding:10px 12px;
+      background:#222; color:#fff; font-weight:600;
     }
-    #crosshair{
-      position:fixed; left:50%; top:50%; z-index:9;
-      width:10px; height:10px; margin-left:-5px; margin-top:-5px;
-      opacity:.7; pointer-events:none;
-      display:none;
-    }
-    #crosshair:before, #crosshair:after{
-      content:""; position:absolute; background:#ffd66b;
-    }
-    #crosshair:before{ left:4px; top:0; width:2px; height:10px; }
-    #crosshair:after{ left:0; top:4px; width:10px; height:2px; }
 
-    /* Mobile joystick */
-    #joyWrap{
-      position:fixed; left:14px; bottom:14px; z-index:10;
-      width:140px; height:140px; display:none;
-      touch-action:none; user-select:none;
-    }
-    #joyBase{
-      width:140px; height:140px; border-radius:999px;
-      background:rgba(255,255,255,.08);
-      border:1px solid rgba(255,255,255,.14);
-      backdrop-filter: blur(8px);
-      position:relative;
-    }
-    #joyStick{
-      width:62px; height:62px; border-radius:999px;
-      background:rgba(255,214,107,.25);
-      border:1px solid rgba(255,214,107,.55);
-      position:absolute; left:39px; top:39px;
+    /* Small aiming dot for taps */
+    #dot{
+      position:fixed; left:50%; top:50%; z-index:9;
+      width:8px; height:8px; margin-left:-4px; margin-top:-4px;
+      border-radius:999px;
+      background:rgba(255,214,107,.9);
+      opacity:.5;
+      pointer-events:none;
     }
   </style>
 </head>
 <body>
   <div id="hud">
-    <b>Museo 3D</b> — stanza navigabile in prima persona<br/>
-    <div id="hint">
-      Desktop: clic dentro → mouse libero + <b>WASD</b> (Shift corre), <b>Esc</b> esce.<br/>
-      Mobile/iPad: trascina per guardare + joystick per muoverti.
+    <b>Museo 3D (iPad)</b><br/>
+    <div class="small">
+      1 dito: guardi intorno<br/>
+      2 dita: ti muovi (su/giù = avanti/indietro, dx/sx = strafe)<br/>
+      Tap su un quadro: scheda info
     </div>
   </div>
 
@@ -78,484 +59,361 @@
     <button id="pClose">Chiudi</button>
   </div>
 
-  <div id="crosshair"></div>
+  <div id="dot"></div>
 
-  <div id="joyWrap">
-    <div id="joyBase">
-      <div id="joyStick"></div>
-    </div>
-  </div>
+<script type="module">
+  import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 
-  <script type="module">
-    import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
-    import { PointerLockControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/PointerLockControls.js";
+  const panel = document.getElementById("panel");
+  const pTitle = document.getElementById("pTitle");
+  const pText = document.getElementById("pText");
+  document.getElementById("pClose").onclick = () => panel.style.display = "none";
 
-    const isTouch = matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
-    const joyWrap = document.getElementById("joyWrap");
-    const crosshair = document.getElementById("crosshair");
-    const panel = document.getElementById("panel");
-    const pTitle = document.getElementById("pTitle");
-    const pText = document.getElementById("pText");
-    document.getElementById("pClose").onclick = () => panel.style.display = "none";
+  // --- Scene / Camera / Renderer
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0b0c10);
 
-    // Scene / Camera / Renderer
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0b0c10);
+  const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.05, 200);
+  camera.position.set(0, 1.65, 4.2);
+  camera.rotation.order = "YXZ";
 
-    const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.05, 200);
-    camera.position.set(0, 1.65, 4.2);
+  const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false });
+  renderer.setPixelRatio(Math.max(1, devicePixelRatio || 1));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.shadowMap.enabled = true;
+  document.body.appendChild(renderer.domElement);
 
-    const renderer = new THREE.WebGLRenderer({ antialias:true });
-    renderer.setPixelRatio(Math.max(1, devicePixelRatio || 1));
+  // --- Lights (morbide e “da museo”)
+  scene.add(new THREE.AmbientLight(0xffffff, 0.28));
+
+  const spot1 = new THREE.SpotLight(0xfff3d6, 1.25, 25, Math.PI/6, 0.35, 1);
+  spot1.position.set(-2.5, 4.6, 0);
+  spot1.castShadow = true;
+  scene.add(spot1);
+
+  const spot2 = new THREE.SpotLight(0xd6e6ff, 1.05, 25, Math.PI/6, 0.35, 1);
+  spot2.position.set(2.5, 4.6, -1.5);
+  spot2.castShadow = true;
+  scene.add(spot2);
+
+  // --- Room
+  const ROOM = { w: 10, h: 4.2, d: 14 };
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x1a1f2a, roughness: 0.95 });
+  const floorMat = new THREE.MeshStandardMaterial({ color: 0x0f1218, roughness: 1.0 });
+  const ceilMat  = new THREE.MeshStandardMaterial({ color: 0x101521, roughness: 1.0 });
+
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM.w, ROOM.d), floorMat);
+  floor.rotation.x = -Math.PI/2;
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(ROOM.w, ROOM.d), ceilMat);
+  ceiling.rotation.x = Math.PI/2;
+  ceiling.position.y = ROOM.h;
+  scene.add(ceiling);
+
+  function makeWall(w, h, pos, rotY){
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), wallMat);
+    m.position.copy(pos);
+    m.rotation.y = rotY;
+    m.receiveShadow = true;
+    scene.add(m);
+    return m;
+  }
+  makeWall(ROOM.w, ROOM.h, new THREE.Vector3(0, ROOM.h/2, -ROOM.d/2), 0);
+  makeWall(ROOM.w, ROOM.h, new THREE.Vector3(0, ROOM.h/2,  ROOM.d/2), Math.PI);
+  makeWall(ROOM.d, ROOM.h, new THREE.Vector3(-ROOM.w/2, ROOM.h/2, 0),  Math.PI/2);
+  makeWall(ROOM.d, ROOM.h, new THREE.Vector3( ROOM.w/2, ROOM.h/2, 0), -Math.PI/2);
+
+  // Zoccolatura
+  const baseMat = new THREE.MeshStandardMaterial({ color: 0x0a0c12, roughness: 0.7 });
+  const baseH = 0.18, baseT = 0.06;
+  function baseboard(len, pos, rotY){
+    const b = new THREE.Mesh(new THREE.BoxGeometry(len, baseH, baseT), baseMat);
+    b.position.copy(pos);
+    b.rotation.y = rotY;
+    b.castShadow = true;
+    b.receiveShadow = true;
+    scene.add(b);
+  }
+  baseboard(ROOM.w, new THREE.Vector3(0, baseH/2, -ROOM.d/2 + baseT/2), 0);
+  baseboard(ROOM.w, new THREE.Vector3(0, baseH/2,  ROOM.d/2 - baseT/2), 0);
+  baseboard(ROOM.d, new THREE.Vector3(-ROOM.w/2 + baseT/2, baseH/2, 0), Math.PI/2);
+  baseboard(ROOM.d, new THREE.Vector3( ROOM.w/2 - baseT/2, baseH/2, 0), Math.PI/2);
+
+  // --- Artworks (procedurali) + picking
+  const rayTargets = [];
+  const artworks = [];
+
+  function makeArtTexture(title, subtitle, accent="#ffd66b"){
+    const c = document.createElement("canvas");
+    c.width = 512; c.height = 512;
+    const ctx = c.getContext("2d");
+    const g = ctx.createLinearGradient(0,0,512,512);
+    g.addColorStop(0, "#0f1522");
+    g.addColorStop(1, "#1f2a40");
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,512,512);
+
+    ctx.globalAlpha = 0.9;
+    for(let i=0;i<18;i++){
+      ctx.fillStyle = i%2 ? "rgba(255,214,107,0.10)" : "rgba(122,162,255,0.10)";
+      ctx.beginPath();
+      ctx.arc(90 + Math.random()*340, 110 + Math.random()*300, 20 + Math.random()*110, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.strokeStyle = "rgba(255,255,255,0.10)";
+    ctx.lineWidth = 6;
+    ctx.strokeRect(18,18,476,476);
+
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.font = "bold 34px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+    ctx.fillText(title, 42, 410);
+
+    ctx.fillStyle = "rgba(230,230,230,0.85)";
+    ctx.font = "22px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+    ctx.fillText(subtitle, 42, 448);
+
+    ctx.fillStyle = accent;
+    ctx.fillRect(42, 468, 160, 8);
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  function addFrame(pos, rotY, title, text){
+    const frame = new THREE.Mesh(
+      new THREE.BoxGeometry(1.5, 1.05, 0.06),
+      new THREE.MeshStandardMaterial({ color: 0x0a0c12, roughness: 0.6 })
+    );
+    frame.position.copy(pos);
+    frame.rotation.y = rotY;
+    frame.castShadow = true;
+    scene.add(frame);
+
+    const tex = makeArtTexture(title, "Collezione didattica");
+    const art = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.35, 0.9),
+      new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9 })
+    );
+    const forward = new THREE.Vector3(0,0,1).applyAxisAngle(new THREE.Vector3(0,1,0), rotY);
+    art.position.copy(pos).add(forward.multiplyScalar(0.04));
+    art.rotation.y = rotY;
+    scene.add(art);
+
+    art.userData = { title, text };
+    rayTargets.push(art);
+    artworks.push(art);
+  }
+
+  addFrame(new THREE.Vector3(-2.2, 2.0, -ROOM.d/2 + 0.01), 0,
+    "L'Infinito",
+    "Tap su un quadro: qui puoi aprire testo, audio, immagini o link interni."
+  );
+  addFrame(new THREE.Vector3( 2.2, 2.0, -ROOM.d/2 + 0.01), 0,
+    "Natura",
+    "Seconda opera. Questo prototipo è “file unico”. Puoi sostituire le texture con immagini reali."
+  );
+  addFrame(new THREE.Vector3(-ROOM.w/2 + 0.01, 2.0, -2.2), Math.PI/2,
+    "Dialogo",
+    "Opera laterale: la camera resta dentro la stanza (collisione semplice)."
+  );
+  addFrame(new THREE.Vector3( ROOM.w/2 - 0.01, 2.0,  1.6), -Math.PI/2,
+    "Vesuvio",
+    "Se vuoi, aggiungo hotspot luminosi e percorso guidato (tappe) stile museo interattivo."
+  );
+
+  // --- Touch navigation model:
+  // 1 finger: look (yaw/pitch)
+  // 2 fingers: move (forward/back + strafe)
+  let yaw = 0, pitch = 0;
+  const lookSpeed = 0.0024;
+
+  let moveVec = new THREE.Vector2(0,0); // x=strife, y=forward (negative=forward)
+  const velocity = new THREE.Vector3();
+  const dir = new THREE.Vector3();
+
+  // pointer tracking
+  const touches = new Map(); // id -> {x,y}
+  let lastTapTime = 0;
+
+  function applyCameraRotation(){
+    pitch = Math.max(-Math.PI/2 + 0.05, Math.min(Math.PI/2 - 0.05, pitch));
+    camera.rotation.set(pitch, yaw, 0);
+  }
+
+  function clampToRoom(pos){
+    const margin = 0.35;
+    pos.x = Math.max(-ROOM.w/2 + margin, Math.min(ROOM.w/2 - margin, pos.x));
+    pos.z = Math.max(-ROOM.d/2 + margin, Math.min(ROOM.d/2 - margin, pos.z));
+    pos.y = Math.max(1.2, Math.min(ROOM.h - 0.2, pos.y));
+  }
+
+  // Raycaster for taps
+  const raycaster = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
+
+  function pickAt(clientX, clientY){
+    const rect = renderer.domElement.getBoundingClientRect();
+    ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    ndc.y = -(((clientY - rect.top) / rect.height) * 2 - 1);
+
+    raycaster.setFromCamera(ndc, camera);
+    const hits = raycaster.intersectObjects(rayTargets, false);
+    if (hits.length){
+      const { title, text } = hits[0].object.userData || {};
+      if (title){
+        pTitle.textContent = title;
+        pText.textContent = text || "";
+        panel.style.display = "block";
+      }
+    }
+  }
+
+  // Prevent page scrolling/bounce
+  document.addEventListener("touchmove", (e) => e.preventDefault(), { passive:false });
+
+  renderer.domElement.addEventListener("pointerdown", (e) => {
+    renderer.domElement.setPointerCapture(e.pointerId);
+    touches.set(e.pointerId, { x:e.clientX, y:e.clientY, sx:e.clientX, sy:e.clientY, moved:false });
+  });
+
+  renderer.domElement.addEventListener("pointermove", (e) => {
+    if (!touches.has(e.pointerId)) return;
+    const t = touches.get(e.pointerId);
+    const dx = e.clientX - t.x;
+    const dy = e.clientY - t.y;
+    t.x = e.clientX; t.y = e.clientY;
+    if (Math.hypot(e.clientX - t.sx, e.clientY - t.sy) > 8) t.moved = true;
+
+    const n = touches.size;
+
+    if (n === 1){
+      // look
+      yaw   -= dx * lookSpeed;
+      pitch -= dy * lookSpeed;
+      applyCameraRotation();
+    } else if (n >= 2){
+      // two-finger move: use average movement of the first two touches
+      // We'll recompute from current two touches each frame for stability
+    }
+  });
+
+  renderer.domElement.addEventListener("pointerup", (e) => {
+    if (!touches.has(e.pointerId)) return;
+    const t = touches.get(e.pointerId);
+    touches.delete(e.pointerId);
+
+    // tap detection: short and little movement
+    const now = performance.now();
+    const isTap = !t.moved;
+    if (isTap){
+      // avoid interpreting a tap that ends a two-finger gesture
+      if (touches.size === 0){
+        pickAt(e.clientX, e.clientY);
+      }
+    }
+  });
+
+  renderer.domElement.addEventListener("pointercancel", (e) => {
+    touches.delete(e.pointerId);
+  });
+
+  function computeTwoFingerMove(){
+    // If we have 2+ touches, take the first two touches in the Map
+    if (touches.size < 2) { moveVec.set(0,0); return; }
+    const it = touches.values();
+    const a = it.next().value;
+    const b = it.next().value;
+
+    // We need the delta between last positions and current positions — but we only store current.
+    // So instead, interpret movement from pointermove already applied: we’ll approximate by using
+    // the change in centroid: store previous centroid each frame.
+  }
+
+  // We'll do better: keep centroid history
+  let prevCentroid = null;
+  function updateMoveFromCentroid(){
+    if (touches.size < 2){
+      prevCentroid = null;
+      moveVec.set(0,0);
+      return;
+    }
+    // centroid of all touches
+    let cx=0, cy=0, k=0;
+    for (const t of touches.values()){ cx += t.x; cy += t.y; k++; }
+    cx /= k; cy /= k;
+
+    if (!prevCentroid){
+      prevCentroid = { cx, cy };
+      moveVec.set(0,0);
+      return;
+    }
+    const dx = cx - prevCentroid.cx;
+    const dy = cy - prevCentroid.cy;
+    prevCentroid.cx = cx;
+    prevCentroid.cy = cy;
+
+    // Map centroid movement to strafe/forward:
+    // dy up (negative) => forward
+    const scale = 0.0042; // tune for iPad feel
+    moveVec.x = dx * scale;   // right/left
+    moveVec.y = dy * scale;   // down/up
+
+    // clamp
+    moveVec.x = Math.max(-1, Math.min(1, moveVec.x));
+    moveVec.y = Math.max(-1, Math.min(1, moveVec.y));
+  }
+
+  // --- Animation
+  const clock = new THREE.Clock();
+
+  function animate(){
+    const dt = Math.min(0.033, clock.getDelta());
+
+    // Update 2-finger movement vector
+    updateMoveFromCentroid();
+
+    // Convert touch moveVec to world movement (first-person)
+    // moveVec.y: positive means fingers moving down => move backward; so forward = -moveVec.y
+    const forwardAmt = -moveVec.y;
+    const rightAmt   =  moveVec.x;
+
+    const speed = 2.2;
+    const yawAngle = yaw;
+
+    const forward = new THREE.Vector3(Math.sin(yawAngle), 0, Math.cos(yawAngle) * -1);
+    const right   = new THREE.Vector3(forward.z * -1, 0, forward.x);
+
+    dir.set(0,0,0);
+    dir.addScaledVector(forward, forwardAmt);
+    dir.addScaledVector(right, rightAmt);
+    if (dir.lengthSq() > 1e-6) dir.normalize();
+
+    const accel = 10.0;
+    velocity.x += (dir.x * speed - velocity.x) * Math.min(1, accel * dt);
+    velocity.z += (dir.z * speed - velocity.z) * Math.min(1, accel * dt);
+
+    camera.position.x += velocity.x * dt;
+    camera.position.z += velocity.z * dt;
+    clampToRoom(camera.position);
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(animate);
+  }
+  animate();
+
+  addEventListener("resize", () => {
+    camera.aspect = innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
-    renderer.shadowMap.enabled = true;
-    document.body.appendChild(renderer.domElement);
+    renderer.setPixelRatio(Math.max(1, devicePixelRatio || 1));
+  });
 
-    // Lights (museo: luce morbida + spot)
-    scene.add(new THREE.AmbientLight(0xffffff, 0.28));
-
-    const spot1 = new THREE.SpotLight(0xfff3d6, 1.2, 25, Math.PI/6, 0.35, 1);
-    spot1.position.set(-2.5, 4.6, 0);
-    spot1.castShadow = true;
-    scene.add(spot1);
-
-    const spot2 = new THREE.SpotLight(0xd6e6ff, 1.0, 25, Math.PI/6, 0.35, 1);
-    spot2.position.set(2.5, 4.6, -1.5);
-    spot2.castShadow = true;
-    scene.add(spot2);
-
-    // Room geometry
-    const ROOM = { w: 10, h: 4.2, d: 14 }; // width, height, depth
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x1a1f2a, roughness: 0.95, metalness: 0.0 });
-    const floorMat = new THREE.MeshStandardMaterial({ color: 0x0f1218, roughness: 1.0 });
-    const ceilMat  = new THREE.MeshStandardMaterial({ color: 0x101521, roughness: 1.0 });
-
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM.w, ROOM.d), floorMat);
-    floor.rotation.x = -Math.PI/2;
-    floor.receiveShadow = true;
-    scene.add(floor);
-
-    const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(ROOM.w, ROOM.d), ceilMat);
-    ceiling.rotation.x = Math.PI/2;
-    ceiling.position.y = ROOM.h;
-    scene.add(ceiling);
-
-    function makeWall(w, h, pos, rotY){
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), wallMat);
-      m.position.copy(pos);
-      m.rotation.y = rotY;
-      m.receiveShadow = true;
-      scene.add(m);
-      return m;
-    }
-
-    // 4 walls
-    makeWall(ROOM.w, ROOM.h, new THREE.Vector3(0, ROOM.h/2, -ROOM.d/2), 0);              // back
-    makeWall(ROOM.w, ROOM.h, new THREE.Vector3(0, ROOM.h/2,  ROOM.d/2), Math.PI);       // front
-    makeWall(ROOM.d, ROOM.h, new THREE.Vector3(-ROOM.w/2, ROOM.h/2, 0),  Math.PI/2);    // left
-    makeWall(ROOM.d, ROOM.h, new THREE.Vector3( ROOM.w/2, ROOM.h/2, 0), -Math.PI/2);    // right
-
-    // Baseboards (zoccolatura)
-    const baseMat = new THREE.MeshStandardMaterial({ color: 0x0a0c12, roughness: 0.7 });
-    const baseH = 0.18, baseT = 0.06;
-    function baseboard(len, pos, rotY){
-      const b = new THREE.Mesh(new THREE.BoxGeometry(len, baseH, baseT), baseMat);
-      b.position.copy(pos);
-      b.rotation.y = rotY;
-      b.castShadow = true;
-      b.receiveShadow = true;
-      scene.add(b);
-      return b;
-    }
-    baseboard(ROOM.w, new THREE.Vector3(0, baseH/2, -ROOM.d/2 + baseT/2), 0);
-    baseboard(ROOM.w, new THREE.Vector3(0, baseH/2,  ROOM.d/2 - baseT/2), 0);
-    baseboard(ROOM.d, new THREE.Vector3(-ROOM.w/2 + baseT/2, baseH/2, 0), Math.PI/2);
-    baseboard(ROOM.d, new THREE.Vector3( ROOM.w/2 - baseT/2, baseH/2, 0), Math.PI/2);
-
-    // Simple "lamps" on ceiling
-    const lampMat = new THREE.MeshStandardMaterial({ color: 0x2a2f3b, roughness: 0.4, metalness: 0.2 });
-    for(let i=0;i<5;i++){
-      const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.28,0.18,24), lampMat);
-      lamp.position.set((i-2)*1.3, ROOM.h-0.12, -0.5);
-      scene.add(lamp);
-    }
-
-    // Frames + art (procedurali: texture canvas)
-    const rayTargets = [];
-    const artworks = [];
-
-    function makeArtTexture(title, subtitle, accent="#ffd66b"){
-      const c = document.createElement("canvas");
-      c.width = 512; c.height = 512;
-      const ctx = c.getContext("2d");
-
-      // background gradient
-      const g = ctx.createLinearGradient(0,0,512,512);
-      g.addColorStop(0, "#0f1522");
-      g.addColorStop(1, "#1f2a40");
-      ctx.fillStyle = g;
-      ctx.fillRect(0,0,512,512);
-
-      // abstract shapes
-      ctx.globalAlpha = 0.9;
-      for(let i=0;i<18;i++){
-        ctx.fillStyle = i%2? "rgba(255,214,107,0.10)" : "rgba(122,162,255,0.10)";
-        ctx.beginPath();
-        ctx.arc(
-          90 + Math.random()*340,
-          110 + Math.random()*300,
-          20 + Math.random()*110,
-          0, Math.PI*2
-        );
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-
-      // border lines
-      ctx.strokeStyle = "rgba(255,255,255,0.10)";
-      ctx.lineWidth = 6;
-      ctx.strokeRect(18,18,476,476);
-
-      // title text
-      ctx.fillStyle = "rgba(255,255,255,0.92)";
-      ctx.font = "bold 34px system-ui, -apple-system, Segoe UI, Roboto, Arial";
-      ctx.fillText(title, 42, 410);
-
-      ctx.fillStyle = "rgba(230,230,230,0.85)";
-      ctx.font = "22px system-ui, -apple-system, Segoe UI, Roboto, Arial";
-      ctx.fillText(subtitle, 42, 448);
-
-      // accent bar
-      ctx.fillStyle = accent;
-      ctx.fillRect(42, 468, 160, 8);
-
-      const tex = new THREE.CanvasTexture(c);
-      tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-      tex.needsUpdate = true;
-      return tex;
-    }
-
-    function addFrameOnWall(wall, pos, rotY, title, text){
-      // frame
-      const frame = new THREE.Mesh(
-        new THREE.BoxGeometry(1.5, 1.05, 0.06),
-        new THREE.MeshStandardMaterial({ color: 0x0a0c12, roughness: 0.6 })
-      );
-      frame.position.copy(pos);
-      frame.rotation.y = rotY;
-      frame.castShadow = true;
-      scene.add(frame);
-
-      // artwork plane slightly in front
-      const tex = makeArtTexture(title, "Collezione didattica");
-      const art = new THREE.Mesh(
-        new THREE.PlaneGeometry(1.35, 0.9),
-        new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9 })
-      );
-      // push forward from wall depending rotation
-      const forward = new THREE.Vector3(0,0,1).applyAxisAngle(new THREE.Vector3(0,1,0), rotY);
-      art.position.copy(pos).add(forward.multiplyScalar(0.04));
-      art.rotation.y = rotY;
-      art.castShadow = false;
-      scene.add(art);
-
-      // label plaque
-      const plaque = new THREE.Mesh(
-        new THREE.BoxGeometry(1.0, 0.18, 0.04),
-        new THREE.MeshStandardMaterial({ color: 0x151a24, roughness: 0.85 })
-      );
-      plaque.position.copy(pos).add(new THREE.Vector3(0, -0.68, 0)).add(forward.clone().multiplyScalar(0.03));
-      plaque.rotation.y = rotY;
-      plaque.castShadow = true;
-      scene.add(plaque);
-
-      // Make a small canvas for plaque text
-      const pc = document.createElement("canvas");
-      pc.width = 512; pc.height = 128;
-      const pctx = pc.getContext("2d");
-      pctx.fillStyle = "#0f121a"; pctx.fillRect(0,0,512,128);
-      pctx.fillStyle = "#ffd66b";
-      pctx.font = "bold 40px system-ui, -apple-system, Segoe UI, Roboto, Arial";
-      pctx.fillText(title, 20, 70);
-      const ptex = new THREE.CanvasTexture(pc);
-      const pplane = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.96, 0.14),
-        new THREE.MeshStandardMaterial({ map: ptex, roughness: 1.0 })
-      );
-      pplane.position.copy(plaque.position).add(forward.clone().multiplyScalar(0.03));
-      pplane.rotation.y = rotY;
-      scene.add(pplane);
-
-      // For picking
-      art.userData = { title, text };
-      rayTargets.push(art);
-      artworks.push(art);
-    }
-
-    // Place artworks
-    addFrameOnWall("back", new THREE.Vector3(-2.2, 2.0, -ROOM.d/2 + 0.01), 0,
-      "L'Infinito",
-      "Esempio: un quadro-test che puoi sostituire con una texture reale o una foto. Click/tap per aprire la scheda."
-    );
-    addFrameOnWall("back", new THREE.Vector3(2.2, 2.0, -ROOM.d/2 + 0.01), 0,
-      "Natura",
-      "Secondo quadro: qui puoi mettere un estratto, un audio, un QR, o un rimando a un pannello laterale."
-    );
-
-    // Side walls (rotations)
-    addFrameOnWall("left", new THREE.Vector3(-ROOM.w/2 + 0.01, 2.0, -2.2), Math.PI/2,
-      "Dialogo",
-      "Quadro sulla parete sinistra. Il titolo e il testo sono dati in userData: puoi trasformarlo in scheda didattica."
-    );
-    addFrameOnWall("right", new THREE.Vector3(ROOM.w/2 - 0.01, 2.0, 1.6), -Math.PI/2,
-      "Vesuvio",
-      "Quadro sulla parete destra. Qui, se vuoi, aggiungiamo un hotspot che apre un video o una mappa."
-    );
-
-    // Controls: Desktop pointer lock; Mobile drag-look + joystick
-    let controls = null;
-    let yaw = 0, pitch = 0;
-    const lookSpeed = 0.0022;
-
-    // Movement state
-    const keys = { w:false, a:false, s:false, d:false, shift:false };
-    let joyVec = { x:0, y:0 }; // x: left/right, y: forward/back
-    const velocity = new THREE.Vector3();
-    const dir = new THREE.Vector3();
-
-    // PointerLock (desktop)
-    if (!isTouch){
-      controls = new PointerLockControls(camera, document.body);
-
-      renderer.domElement.addEventListener("click", () => {
-        // don't lock if panel open
-        if (panel.style.display === "block") return;
-        controls.lock();
-      });
-
-      controls.addEventListener("lock", () => {
-        crosshair.style.display = "block";
-      });
-      controls.addEventListener("unlock", () => {
-        crosshair.style.display = "none";
-      });
-
-      scene.add(controls.getObject());
-    } else {
-      // Touch look: drag on screen
-      let dragging = false, lastX=0, lastY=0;
-      renderer.domElement.addEventListener("pointerdown", (e) => {
-        // avoid starting drag if tapping panel
-        if (panel.contains(e.target)) return;
-        dragging = true;
-        lastX = e.clientX; lastY = e.clientY;
-      });
-      window.addEventListener("pointerup", () => dragging = false);
-      window.addEventListener("pointermove", (e) => {
-        if (!dragging) return;
-        const dx = e.clientX - lastX;
-        const dy = e.clientY - lastY;
-        lastX = e.clientX; lastY = e.clientY;
-
-        yaw   -= dx * lookSpeed * 1.35;
-        pitch -= dy * lookSpeed * 1.35;
-        pitch = Math.max(-Math.PI/2 + 0.05, Math.min(Math.PI/2 - 0.05, pitch));
-        camera.rotation.set(pitch, yaw, 0, "YXZ");
-      }, { passive:true });
-
-      // Show joystick
-      joyWrap.style.display = "block";
-      setupJoystick();
-    }
-
-    // Keyboard
-    window.addEventListener("keydown", (e) => {
-      if (e.code === "KeyW") keys.w = true;
-      if (e.code === "KeyA") keys.a = true;
-      if (e.code === "KeyS") keys.s = true;
-      if (e.code === "KeyD") keys.d = true;
-      if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = true;
-      if (e.code === "Escape") panel.style.display = "none";
-    });
-    window.addEventListener("keyup", (e) => {
-      if (e.code === "KeyW") keys.w = false;
-      if (e.code === "KeyA") keys.a = false;
-      if (e.code === "KeyS") keys.s = false;
-      if (e.code === "KeyD") keys.d = false;
-      if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = false;
-    });
-
-    // Raycaster for picking artworks
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2(0,0);
-
-    function doPick(clientX, clientY){
-      const rect = renderer.domElement.getBoundingClientRect();
-      mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -(((clientY - rect.top) / rect.height) * 2 - 1);
-
-      raycaster.setFromCamera(mouse, camera);
-      const hits = raycaster.intersectObjects(rayTargets, false);
-      if (hits.length){
-        const obj = hits[0].object;
-        const { title, text } = obj.userData || {};
-        if (title){
-          pTitle.textContent = title;
-          pText.textContent = text || "";
-          panel.style.display = "block";
-        }
-      }
-    }
-
-    renderer.domElement.addEventListener("click", (e) => {
-      // avoid pick while pointer locked (use center ray if locked)
-      if (!isTouch && controls && controls.isLocked){
-        pickFromCenter();
-      } else {
-        doPick(e.clientX, e.clientY);
-      }
-    });
-
-    renderer.domElement.addEventListener("touchend", (e) => {
-      // tap pick (single touch)
-      if (!e.changedTouches || e.changedTouches.length !== 1) return;
-      const t = e.changedTouches[0];
-      doPick(t.clientX, t.clientY);
-    }, { passive:true });
-
-    function pickFromCenter(){
-      raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
-      const hits = raycaster.intersectObjects(rayTargets, false);
-      if (hits.length){
-        const { title, text } = hits[0].object.userData || {};
-        if (title){
-          pTitle.textContent = title;
-          pText.textContent = text || "";
-          panel.style.display = "block";
-        }
-      }
-    }
-
-    // Collision: keep camera inside room (simple clamp)
-    function clampToRoom(pos){
-      const margin = 0.35; // distance from walls
-      pos.x = Math.max(-ROOM.w/2 + margin, Math.min(ROOM.w/2 - margin, pos.x));
-      pos.z = Math.max(-ROOM.d/2 + margin, Math.min(ROOM.d/2 - margin, pos.z));
-      pos.y = Math.max(1.2, Math.min(ROOM.h - 0.2, pos.y));
-    }
-
-    // Desktop look from pointer lock; mobile uses yaw/pitch already
-    const clock = new THREE.Clock();
-
-    function animate(){
-      const dt = Math.min(0.033, clock.getDelta());
-
-      // Slightly highlight hovered artwork when pointer locked (optional)
-      if (!isTouch && controls && controls.isLocked){
-        raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
-        const hits = raycaster.intersectObjects(rayTargets, false);
-        for(const a of artworks) a.material.emissive?.setHex?.(0x000000);
-        for(const a of artworks){
-          if (!a.material.emissive) a.material.emissive = new THREE.Color(0x000000);
-        }
-        if (hits.length){
-          hits[0].object.material.emissive.setHex(0x222200);
-        }
-      }
-
-      // Movement input
-      const speed = (keys.shift ? 4.2 : 2.3);
-      const inputForward = (keys.w ? 1:0) - (keys.s ? 1:0);
-      const inputRight   = (keys.d ? 1:0) - (keys.a ? 1:0);
-
-      const f = inputForward + (-joyVec.y); // joy y negative is forward
-      const r = inputRight + (joyVec.x);
-
-      // Direction based on camera yaw
-      dir.set(0,0,0);
-      const yawAngle = (!isTouch && controls) ? controls.getObject().rotation.y : camera.rotation.y;
-      const forward = new THREE.Vector3(Math.sin(yawAngle), 0, Math.cos(yawAngle) * -1);
-      const right   = new THREE.Vector3(forward.z * -1, 0, forward.x);
-
-      dir.addScaledVector(forward, f);
-      dir.addScaledVector(right, r);
-      if (dir.lengthSq() > 0) dir.normalize();
-
-      // Smooth velocity
-      const accel = 10.0;
-      velocity.x += (dir.x * speed - velocity.x) * Math.min(1, accel * dt);
-      velocity.z += (dir.z * speed - velocity.z) * Math.min(1, accel * dt);
-
-      // Apply movement
-      if (!isTouch && controls){
-        const obj = controls.getObject();
-        obj.position.x += velocity.x * dt;
-        obj.position.z += velocity.z * dt;
-        clampToRoom(obj.position);
-      } else {
-        camera.position.x += velocity.x * dt;
-        camera.position.z += velocity.z * dt;
-        clampToRoom(camera.position);
-      }
-
-      renderer.render(scene, camera);
-      requestAnimationFrame(animate);
-    }
-    animate();
-
-    addEventListener("resize", () => {
-      camera.aspect = innerWidth/innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(innerWidth, innerHeight);
-      renderer.setPixelRatio(Math.max(1, devicePixelRatio || 1));
-    });
-
-    // Joystick implementation (mobile)
-    function setupJoystick(){
-      const base = document.getElementById("joyBase");
-      const stick = document.getElementById("joyStick");
-      const R = 52; // max displacement
-      let active = false;
-      let baseRect;
-
-      function setStick(dx, dy){
-        const len = Math.hypot(dx, dy);
-        if (len > R){
-          dx = dx / len * R;
-          dy = dy / len * R;
-        }
-        stick.style.transform = `translate(${dx}px, ${dy}px)`;
-        joyVec.x = dx / R;
-        joyVec.y = dy / R;
-      }
-
-      base.addEventListener("pointerdown", (e) => {
-        active = true;
-        baseRect = base.getBoundingClientRect();
-        base.setPointerCapture(e.pointerId);
-        const cx = baseRect.left + baseRect.width/2;
-        const cy = baseRect.top + baseRect.height/2;
-        setStick(e.clientX - cx, e.clientY - cy);
-      });
-
-      base.addEventListener("pointermove", (e) => {
-        if (!active) return;
-        const cx = baseRect.left + baseRect.width/2;
-        const cy = baseRect.top + baseRect.height/2;
-        setStick(e.clientX - cx, e.clientY - cy);
-      });
-
-      base.addEventListener("pointerup", () => {
-        active = false;
-        stick.style.transform = "translate(0px, 0px)";
-        joyVec.x = 0; joyVec.y = 0;
-      });
-      base.addEventListener("pointercancel", () => {
-        active = false;
-        stick.style.transform = "translate(0px, 0px)";
-        joyVec.x = 0; joyVec.y = 0;
-      });
-    }
-  </script>
+</script>
 </body>
 </html>
