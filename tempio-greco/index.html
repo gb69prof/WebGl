@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Tempio Greco – WebGL (iPad)</title>
+  <style>
+    html, body { margin:0; padding:0; height:100%; background:#0b1220; overflow:hidden; }
+    #c { width:100%; height:100%; display:block; touch-action:none; }
+    .hud{
+      position:fixed; left:12px; top:12px; right:12px;
+      display:flex; gap:10px; align-items:center; justify-content:space-between;
+      pointer-events:none; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      color:#eaf2ff;
+    }
+    .pill{
+      pointer-events:auto;
+      background: rgba(15, 22, 40, .62);
+      border: 1px solid rgba(255,255,255,.12);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      padding:10px 12px;
+      border-radius: 14px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.35);
+      max-width: 560px;
+      line-height: 1.25;
+      font-size: 13px;
+    }
+    .btn{
+      pointer-events:auto;
+      appearance:none; border:0;
+      background: rgba(255,255,255,.10);
+      color:#eaf2ff;
+      padding:10px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.12);
+      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+      font-weight: 650;
+    }
+    .btn:active{ transform: translateY(1px); }
+    .right{ display:flex; gap:10px; }
+    .small{ opacity:.9; font-size:12px; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div class="hud">
+    <div class="pill">
+      <div style="font-weight:800; letter-spacing:.2px;">Tempio greco (WebGL)</div>
+      <div class="small">Trascina per ruotare • Pinch per zoom • Due dita per spostarti</div>
+    </div>
+    <div class="right">
+      <button class="btn" id="reset">Vista iniziale</button>
+    </div>
+  </div>
+
+<script type="module">
+import * as THREE from "https://unpkg.com/three@0.160.1/build/three.module.js";
+import { OrbitControls } from "https://unpkg.com/three@0.160.1/examples/jsm/controls/OrbitControls.js";
+import { GLTFLoader } from "https://unpkg.com/three@0.160.1/examples/jsm/loaders/GLTFLoader.js";
+
+const canvas = document.getElementById("c");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:false });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+
+// Sky: gradient dome + sun glow
+function makeSkyTexture(){
+  const w=1024, h=512;
+  const cnv=document.createElement('canvas'); cnv.width=w; cnv.height=h;
+  const ctx=cnv.getContext('2d');
+  const g=ctx.createLinearGradient(0,0,0,h);
+  g.addColorStop(0,'#63b2ff');
+  g.addColorStop(0.55,'#bfe6ff');
+  g.addColorStop(1,'#f7fbff');
+  ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
+
+  const sunX = Math.floor(w*0.72), sunY = Math.floor(h*0.20);
+  const rg = ctx.createRadialGradient(sunX,sunY, 0, sunX,sunY, h*0.58);
+  rg.addColorStop(0,'rgba(255,246,220,0.95)');
+  rg.addColorStop(0.22,'rgba(255,246,220,0.40)');
+  rg.addColorStop(1,'rgba(255,246,220,0.0)');
+  ctx.fillStyle = rg; ctx.fillRect(0,0,w,h);
+
+  const tex = new THREE.CanvasTexture(cnv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+const skyGeo = new THREE.SphereGeometry(250, 64, 32);
+const skyMat = new THREE.MeshBasicMaterial({ map: makeSkyTexture(), side: THREE.BackSide });
+scene.add(new THREE.Mesh(skyGeo, skyMat));
+
+// Lights
+scene.add(new THREE.HemisphereLight(0xcfe9ff, 0x203018, 0.70));
+const sun = new THREE.DirectionalLight(0xfff0d0, 1.05);
+sun.position.set(35, 55, 25);
+scene.add(sun);
+
+// Camera & controls (iPad friendly)
+const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 1000);
+const start = {
+  pos: new THREE.Vector3(0, 16, 52),
+  target: new THREE.Vector3(0, 7, 0)
+};
+camera.position.copy(start.pos);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.rotateSpeed = 0.55;
+controls.zoomSpeed = 0.9;
+controls.panSpeed = 0.55;
+controls.minDistance = 18;
+controls.maxDistance = 140;
+controls.maxPolarAngle = Math.PI * 0.47;
+controls.target.copy(start.target);
+
+// Clouds (sprites)
+function makeCloudTexture(){
+  const s=256;
+  const cnv=document.createElement('canvas'); cnv.width=s; cnv.height=s;
+  const ctx=cnv.getContext('2d');
+  ctx.clearRect(0,0,s,s);
+  function puff(x,y,r,a){
+    const g=ctx.createRadialGradient(x,y,0,x,y,r);
+    g.addColorStop(0,`rgba(255,255,255,${a})`);
+    g.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+  }
+  for(let i=0;i<28;i++){
+    puff(60+Math.random()*140, 90+Math.random()*90, 28+Math.random()*42, 0.10+Math.random()*0.18);
+  }
+  const tex=new THREE.CanvasTexture(cnv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate=true;
+  return tex;
+}
+const cloudTex = makeCloudTexture();
+const cloudMat = new THREE.SpriteMaterial({ map: cloudTex, transparent:true, depthWrite:false, opacity:0.85 });
+const clouds=[];
+for(let i=0;i<14;i++){
+  const sp=new THREE.Sprite(cloudMat);
+  sp.position.set(-80+Math.random()*160, 55+Math.random()*30, -70+Math.random()*140);
+  const sc=35+Math.random()*45;
+  sp.scale.set(sc, sc*0.62, 1);
+  scene.add(sp);
+  clouds.push(sp);
+}
+
+// Load GLB
+const loader = new GLTFLoader();
+loader.load("./assets/scene.glb", (gltf)=>{
+  const root = gltf.scene;
+  root.traverse((o)=>{
+    if(o.isMesh){
+      o.receiveShadow = true;
+      if(o.material){
+        o.material.side = THREE.FrontSide;
+      }
+    }
+  });
+  scene.add(root);
+}, undefined, (e)=>console.error(e));
+
+// Resize
+function resize(){
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize, { passive:true });
+resize();
+
+// Reset
+document.getElementById("reset").addEventListener("click", ()=>{
+  camera.position.copy(start.pos);
+  controls.target.copy(start.target);
+  controls.update();
+});
+
+// Animate
+function animate(){
+  for(const sp of clouds){
+    sp.position.x += 0.015;
+    if(sp.position.x > 110) sp.position.x = -110;
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+animate();
+</script>
+</body>
+</html>
