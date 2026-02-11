@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>Museo 3D – Cratere Greco</title>
+  <style>
+    :root{
+      --bg:#0b0f14;
+      --panel:rgba(10,14,20,.62);
+      --txt:#e7eefb;
+      --muted:#a8b3c7;
+      --accent:#7dd3fc;
+      --danger:#fb7185;
+    }
+    html,body{height:100%; margin:0; background:var(--bg); color:var(--txt); font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;}
+    #app{position:fixed; inset:0; overflow:hidden;}
+    canvas{display:block; width:100%; height:100%; touch-action:none;}
+    /* HUD */
+    #hud{
+      position:absolute; left:12px; right:12px; top:12px;
+      display:flex; gap:10px; align-items:center; justify-content:space-between;
+      pointer-events:none;
+    }
+    .chip{
+      pointer-events:auto;
+      background:var(--panel);
+      backdrop-filter: blur(10px);
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:14px;
+      padding:10px 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.35);
+    }
+    #title{display:flex; flex-direction:column; gap:2px; min-width: 210px;}
+    #title b{font-size:14px; letter-spacing:.2px;}
+    #title span{font-size:12px; color:var(--muted);}
+    #controls{display:flex; gap:8px; align-items:center;}
+    button{
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(255,255,255,.08);
+      color:var(--txt);
+      border-radius:12px;
+      padding:9px 10px;
+      font-weight:600;
+      font-size:12px;
+      letter-spacing:.2px;
+      cursor:pointer;
+    }
+    button.active{border-color: rgba(125,211,252,.55); box-shadow:0 0 0 2px rgba(125,211,252,.12) inset;}
+    button:active{transform:translateY(1px);}
+    #hint{
+      pointer-events:none;
+      position:absolute; left:50%; transform:translateX(-50%);
+      bottom:12px;
+      max-width:min(720px, calc(100% - 24px));
+      text-align:center;
+      font-size:12px;
+      color:var(--muted);
+      line-height:1.35;
+      background:rgba(10,14,20,.55);
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:14px;
+      padding:10px 12px;
+      backdrop-filter: blur(10px);
+    }
+    #loading{
+      position:absolute; inset:0;
+      display:flex; align-items:center; justify-content:center;
+      background: radial-gradient(1200px 800px at 50% 30%, rgba(125,211,252,.08), transparent 60%),
+                  radial-gradient(900px 600px at 50% 70%, rgba(251,113,133,.06), transparent 60%),
+                  #070a0f;
+      z-index:10;
+    }
+    #loading .box{
+      width:min(520px, calc(100% - 28px));
+      background:rgba(12,16,24,.75);
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:18px;
+      padding:18px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.45);
+      backdrop-filter: blur(12px);
+    }
+    #loading h1{margin:0 0 6px 0; font-size:16px;}
+    #loading p{margin:0 0 12px 0; font-size:12px; color:var(--muted); line-height:1.35;}
+    .bar{height:10px; background:rgba(255,255,255,.08); border-radius:999px; overflow:hidden; border:1px solid rgba(255,255,255,.10);}
+    .bar > div{height:100%; width:0%; background:linear-gradient(90deg, rgba(125,211,252,.92), rgba(251,113,133,.88)); border-radius:999px;}
+    .row{display:flex; gap:10px; align-items:center;}
+    .pct{min-width:42px; text-align:right; font-variant-numeric: tabular-nums; color:var(--txt);}
+    /* Virtual joysticks (only shown in Walk mode) */
+    #pads{
+      position:absolute; inset:0;
+      pointer-events:none;
+    }
+    .pad{
+      position:absolute;
+      width:150px; height:150px;
+      border-radius:50%;
+      border:1px solid rgba(255,255,255,.14);
+      background:rgba(10,14,20,.22);
+      backdrop-filter: blur(6px);
+      pointer-events:auto;
+      touch-action:none;
+      display:none;
+    }
+    .pad .knob{
+      position:absolute; left:50%; top:50%;
+      width:70px; height:70px;
+      transform: translate(-50%,-50%);
+      border-radius:50%;
+      border:1px solid rgba(255,255,255,.16);
+      background:rgba(125,211,252,.14);
+      box-shadow: inset 0 0 0 2px rgba(125,211,252,.08);
+    }
+    #padMove{left:16px; bottom:16px;}
+    #padLook{right:16px; bottom:16px;}
+    #padLook .knob{background: rgba(251,113,133,.14); box-shadow: inset 0 0 0 2px rgba(251,113,133,.08);}
+    /* Small help bubble */
+    #mini{
+      position:absolute; right:12px; top:70px;
+      max-width: 260px;
+      display:none;
+      pointer-events:none;
+    }
+    #mini .chip{pointer-events:none}
+    @media (max-width: 480px){
+      #title{min-width:auto;}
+      #mini{display:block;}
+      #hint{font-size:11px;}
+      .pad{width:140px; height:140px;}
+      .pad .knob{width:64px; height:64px;}
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="loading">
+    <div class="box">
+      <h1>Museo 3D – Caricamento</h1>
+      <p>Sto preparando la sala e il cratere. Su iPad: puoi ruotare e zoomare, oppure passare a “Passeggia” per muoverti nello spazio.</p>
+      <div class="row">
+        <div class="bar" style="flex:1"><div id="bar"></div></div>
+        <div class="pct" id="pct">0%</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="hud">
+    <div id="title" class="chip">
+      <b>Museo 3D</b>
+      <span>Cratere greco su piedistallo</span>
+    </div>
+
+    <div id="controls" class="chip">
+      <button id="btnOrbit" class="active" type="button">Osserva</button>
+      <button id="btnWalk" type="button">Passeggia</button>
+      <button id="btnReset" type="button">Reset</button>
+    </div>
+  </div>
+
+  <div id="mini">
+    <div class="chip">
+      <div style="font-size:12px; font-weight:700; margin-bottom:4px;">Comandi rapidi</div>
+      <div style="font-size:12px; color:var(--muted); line-height:1.35;">
+        <b>Osserva</b>: un dito ruota, due dita zoom/pan.<br/>
+        <b>Passeggia</b>: joystick sinistro muove, destro guarda.
+      </div>
+    </div>
+  </div>
+
+  <div id="pads">
+    <div id="padMove" class="pad"><div class="knob"></div></div>
+    <div id="padLook" class="pad"><div class="knob"></div></div>
+  </div>
+
+  <div id="hint">Modalità <b>Osserva</b>: un dito ruota, due dita per zoom/pan. Se vuoi muoverti nella sala, passa a <b>Passeggia</b> (joystick).</div>
+  <canvas id="c"></canvas>
+</div>
+
+<script type="module">
+  import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
+  import { OrbitControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+  import { GLTFLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
+
+  const canvas = document.getElementById("c");
+  const loadingEl = document.getElementById("loading");
+  const barEl = document.getElementById("bar");
+  const pctEl = document.getElementById("pct");
+  const hintEl = document.getElementById("hint");
+  const btnOrbit = document.getElementById("btnOrbit");
+  const btnWalk  = document.getElementById("btnWalk");
+  const btnReset = document.getElementById("btnReset");
+
+  const padMove = document.getElementById("padMove");
+  const padLook = document.getElementById("padLook");
+
+  // --- Renderer
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+  renderer.setClearColor(0x070a0f, 1);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+
+  // Cap pixel ratio for iPad performance
+  function setSize(){
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const pr = Math.min(window.devicePixelRatio || 1, 2);
+    renderer.setPixelRatio(pr);
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+
+  // --- Scene + Camera
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0x070a0f, 10, 60);
+
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 200);
+  const start = {
+    pos: new THREE.Vector3(0, 2.2, 7.5),
+    target: new THREE.Vector3(0, 1.55, 0),
+    yaw: 0,
+    pitch: 0
+  };
+  camera.position.copy(start.pos);
+
+  // Orbit (Osserva)
+  const controls = new OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.06;
+  controls.target.copy(start.target);
+  controls.minDistance = 2.2;
+  controls.maxDistance = 18;
+  controls.maxPolarAngle = Math.PI * 0.495;
+  controls.minPolarAngle = 0.15;
+  controls.enablePan = true;
+
+  // --- Lights
+  const hemi = new THREE.HemisphereLight(0xbfdcff, 0x0b0f14, 0.65);
+  scene.add(hemi);
+
+  const key = new THREE.DirectionalLight(0xffffff, 1.1);
+  key.position.set(5, 8, 5);
+  key.castShadow = false;
+  scene.add(key);
+
+  const fill = new THREE.DirectionalLight(0xffffff, 0.55);
+  fill.position.set(-6, 5, -4);
+  scene.add(fill);
+
+  // Spot over pedestal
+  const spot = new THREE.SpotLight(0xffffff, 1.2, 25, Math.PI/7.5, 0.35, 1);
+  spot.position.set(0, 8, 0);
+  spot.target.position.set(0, 1.4, 0);
+  scene.add(spot, spot.target);
+
+  // --- Museum room geometry
+  const room = new THREE.Group();
+  scene.add(room);
+
+  const floorMat = new THREE.MeshStandardMaterial({ color: 0x1a2432, roughness: 0.65, metalness: 0.05 });
+  const wallMat  = new THREE.MeshStandardMaterial({ color: 0x0f1724, roughness: 0.9, metalness: 0.0 });
+  const trimMat  = new THREE.MeshStandardMaterial({ color: 0x2a3b55, roughness: 0.6, metalness: 0.15 });
+
+  // Floor
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), floorMat);
+  floor.rotation.x = -Math.PI/2;
+  floor.position.y = 0;
+  room.add(floor);
+
+  // Subtle floor grid
+  const grid = new THREE.GridHelper(40, 40, 0x2a3b55, 0x142033);
+  grid.material.opacity = 0.18;
+  grid.material.transparent = true;
+  grid.position.y = 0.001;
+  room.add(grid);
+
+  // Walls (simple box without floor)
+  const wallH = 6;
+  const wallT = 0.4;
+  const wallL = 40;
+
+  function wall(w, h, d, x, y, z){
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+    m.position.set(x,y,z);
+    return m;
+  }
+  room.add(wall(wallL, wallH, wallT, 0, wallH/2, -wallL/2));
+  room.add(wall(wallL, wallH, wallT, 0, wallH/2,  wallL/2));
+  room.add(wall(wallT, wallH, wallL, -wallL/2, wallH/2, 0));
+  room.add(wall(wallT, wallH, wallL,  wallL/2, wallH/2, 0));
+
+  // Ceiling (dark)
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), wallMat);
+  ceil.rotation.x = Math.PI/2;
+  ceil.position.y = wallH;
+  room.add(ceil);
+
+  // Decorative columns around
+  const colMat = new THREE.MeshStandardMaterial({ color: 0x233046, roughness: 0.5, metalness: 0.15 });
+  const colGeo = new THREE.CylinderGeometry(0.35, 0.38, 5.4, 24, 1);
+  const capGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.22, 28);
+  const baseGeo = new THREE.CylinderGeometry(0.55, 0.6, 0.22, 28);
+
+  function addColumn(x,z){
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(colGeo, colMat);
+    body.position.y = 2.7;
+    const cap = new THREE.Mesh(capGeo, trimMat);
+    cap.position.y = 5.4;
+    const base = new THREE.Mesh(baseGeo, trimMat);
+    base.position.y = 0.11;
+    g.add(body, cap, base);
+    g.position.set(x,0,z);
+    room.add(g);
+  }
+  const ring = 12;
+  const positions = [
+    [-ring,-ring],[0,-ring],[ring,-ring],
+    [-ring,0],[ring,0],
+    [-ring,ring],[0,ring],[ring,ring]
+  ];
+  positions.forEach(([x,z])=>addColumn(x,z));
+
+  // --- Pedestal
+  const pedestal = new THREE.Group();
+  scene.add(pedestal);
+  pedestal.position.set(0,0,0);
+
+  const pedBase = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.85, 0.35, 48), trimMat);
+  pedBase.position.y = 0.175;
+
+  const pedBody = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.45, 1.35, 56), new THREE.MeshStandardMaterial({
+    color: 0x202a3a, roughness: 0.45, metalness: 0.12
+  }));
+  pedBody.position.y = 0.35 + 0.675;
+
+  const pedTop = new THREE.Mesh(new THREE.CylinderGeometry(1.55, 1.55, 0.18, 48), trimMat);
+  pedTop.position.y = 0.35 + 1.35 + 0.09;
+
+  pedestal.add(pedBase, pedBody, pedTop);
+
+  // Add a soft light ring (fake with emissive)
+  const ringMat = new THREE.MeshStandardMaterial({ color: 0x141a26, roughness: 0.9, metalness: 0.0, emissive: 0x1b2b3f, emissiveIntensity: 0.35 });
+  const ringMesh = new THREE.Mesh(new THREE.TorusGeometry(1.18, 0.04, 16, 80), ringMat);
+  ringMesh.rotation.x = Math.PI/2;
+  ringMesh.position.y = pedTop.position.y + 0.02;
+  pedestal.add(ringMesh);
+
+  // --- Load GLB crater
+  const loader = new GLTFLoader();
+  const manager = new THREE.LoadingManager();
+  manager.onProgress = (url, loaded, total) => {
+    const pct = total ? (loaded/total) : 0;
+    const v = Math.max(0, Math.min(1, pct));
+    barEl.style.width = `${Math.round(v*100)}%`;
+    pctEl.textContent = `${Math.round(v*100)}%`;
+  };
+  manager.onLoad = () => {
+    barEl.style.width = "100%";
+    pctEl.textContent = "100%";
+    setTimeout(()=>loadingEl.style.display = "none", 350);
+  };
+
+  loader.manager = manager;
+
+  let crater = null;
+
+  loader.load("./assets/cratere-greco4.glb", (gltf) => {
+    crater = gltf.scene;
+    crater.traverse((o)=>{
+      if(o.isMesh){
+        o.castShadow = false;
+        o.receiveShadow = false;
+        // ensure SRGB-ish look for textures
+        if (o.material){
+          o.material.side = THREE.FrontSide;
+        }
+      }
+    });
+
+    // Place on pedestal top
+    crater.position.set(0, pedTop.position.y + 0.03, 0);
+
+    // Auto-scale to fit nicely
+    const box = new THREE.Box3().setFromObject(crater);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const desired = 1.55; // target height-ish
+    const s = (maxDim > 0) ? (desired / maxDim) : 1;
+    crater.scale.setScalar(s);
+
+    // Recompute after scale; center it
+    const box2 = new THREE.Box3().setFromObject(crater);
+    const center = new THREE.Vector3();
+    box2.getCenter(center);
+    crater.position.sub(center); // move to origin
+    crater.position.y += pedTop.position.y + 0.05; // sit on top
+
+    // Slight rotation for aesthetics
+    crater.rotation.y = Math.PI * 0.15;
+
+    scene.add(crater);
+
+    // adjust orbit target at crater center height
+    const box3 = new THREE.Box3().setFromObject(crater);
+    const center3 = new THREE.Vector3();
+    box3.getCenter(center3);
+    controls.target.copy(center3);
+    controls.update();
+
+  }, undefined, (err) => {
+    console.error(err);
+    pctEl.textContent = "ERRORE";
+    hintEl.innerHTML = '<b style="color:var(--danger)">Errore nel caricamento del modello.</b> Controlla che il file GLB sia presente in <code>assets/</code>.';
+  });
+
+  // --- Walk mode (touch-friendly)
+  const walk = {
+    enabled: false,
+    yaw: 0,
+    pitch: 0,
+    move: new THREE.Vector2(0,0), // x strafe, y forward
+    look: new THREE.Vector2(0,0), // x yaw, y pitch
+    speed: 3.0, // m/s
+    lookSpeed: 1.6,
+    height: 1.65,
+  };
+
+  // Utility: virtual joystick
+  function makePad(el, onChange){
+    const knob = el.querySelector(".knob");
+    let pointerId = null;
+    let start = {x:0,y:0};
+    let value = {x:0,y:0};
+    const max = 46;
+
+    function setKnob(x,y){
+      knob.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+    }
+    function setValue(x,y){
+      value.x = x; value.y = y;
+      onChange({x,y});
+    }
+
+    el.addEventListener("pointerdown", (e)=>{
+      pointerId = e.pointerId;
+      el.setPointerCapture(pointerId);
+      const r = el.getBoundingClientRect();
+      start.x = r.left + r.width/2;
+      start.y = r.top + r.height/2;
+      setValue(0,0);
+      setKnob(0,0);
+    }, {passive:false});
+
+    el.addEventListener("pointermove", (e)=>{
+      if(pointerId !== e.pointerId) return;
+      const dx = e.clientX - start.x;
+      const dy = e.clientY - start.y;
+      const len = Math.hypot(dx,dy);
+      const k = len > max ? (max/len) : 1;
+      const x = dx*k;
+      const y = dy*k;
+      setKnob(x,y);
+      setValue(x/max, y/max);
+      e.preventDefault();
+    }, {passive:false});
+
+    function end(e){
+      if(pointerId !== e.pointerId && e.type !== "pointercancel") return;
+      pointerId = null;
+      setKnob(0,0);
+      setValue(0,0);
+    }
+    el.addEventListener("pointerup", end, {passive:true});
+    el.addEventListener("pointercancel", end, {passive:true});
+  }
+
+  makePad(padMove, (v)=>{
+    // In pad: up is negative y; we want forward positive
+    walk.move.set(v.x, -v.y);
+  });
+  makePad(padLook, (v)=>{
+    walk.look.set(v.x, -v.y);
+  });
+
+  // Mode switching
+  function setMode(mode){
+    const isWalk = mode === "walk";
+    walk.enabled = isWalk;
+
+    btnOrbit.classList.toggle("active", !isWalk);
+    btnWalk.classList.toggle("active", isWalk);
+
+    controls.enabled = !isWalk;
+
+    padMove.style.display = isWalk ? "block" : "none";
+    padLook.style.display = isWalk ? "block" : "none";
+
+    if(isWalk){
+      hintEl.innerHTML = 'Modalità <b>Passeggia</b>: joystick sinistro muove, destro guarda. Usa <b>Reset</b> per tornare alla vista iniziale.';
+      // Initialize yaw/pitch from camera direction
+      const dir = new THREE.Vector3();
+      camera.getWorldDirection(dir);
+      walk.yaw = Math.atan2(dir.x, dir.z);
+      walk.pitch = Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1));
+    }else{
+      hintEl.innerHTML = 'Modalità <b>Osserva</b>: un dito ruota, due dita per zoom/pan. Se vuoi muoverti nella sala, passa a <b>Passeggia</b> (joystick).';
+    }
+  }
+
+  btnOrbit.addEventListener("click", ()=>setMode("orbit"));
+  btnWalk.addEventListener("click", ()=>setMode("walk"));
+
+  btnReset.addEventListener("click", ()=>{
+    setMode("orbit");
+    camera.position.copy(start.pos);
+    controls.target.copy(start.target);
+    controls.update();
+  });
+
+  // Simple collision constraints (keep camera inside room)
+  const ROOM_HALF = 19.2; // inside walls
+  function clampToRoom(pos){
+    pos.x = THREE.MathUtils.clamp(pos.x, -ROOM_HALF, ROOM_HALF);
+    pos.z = THREE.MathUtils.clamp(pos.z, -ROOM_HALF, ROOM_HALF);
+    pos.y = Math.max(walk.height, pos.y);
+  }
+
+  // Animation loop
+  const clock = new THREE.Clock();
+
+  function tick(){
+    const dt = Math.min(0.033, clock.getDelta());
+
+    if(walk.enabled){
+      // apply look
+      walk.yaw   += walk.look.x * walk.lookSpeed * dt * 1.8;
+      walk.pitch += walk.look.y * walk.lookSpeed * dt * 1.2;
+      walk.pitch = THREE.MathUtils.clamp(walk.pitch, -1.1, 1.1);
+
+      // movement direction (xz)
+      const forward = new THREE.Vector3(Math.sin(walk.yaw), 0, Math.cos(walk.yaw));
+      const right   = new THREE.Vector3(forward.z, 0, -forward.x);
+
+      const moveVec = new THREE.Vector3()
+        .addScaledVector(forward, walk.move.y)
+        .addScaledVector(right, walk.move.x);
+
+      if(moveVec.lengthSq() > 1e-5) moveVec.normalize();
+
+      const speed = walk.speed * (1 + (Math.abs(walk.move.y) > 0.6 ? 0.15 : 0));
+      camera.position.addScaledVector(moveVec, speed * dt);
+
+      // keep height constant
+      camera.position.y = walk.height;
+
+      // avoid walking into pedestal
+      const pedCenter = new THREE.Vector3(0,0,0);
+      const dx = camera.position.x - pedCenter.x;
+      const dz = camera.position.z - pedCenter.z;
+      const dist = Math.hypot(dx,dz);
+      const minDist = 2.35;
+      if(dist < minDist){
+        const k = minDist / Math.max(dist, 1e-6);
+        camera.position.x = dx * k;
+        camera.position.z = dz * k;
+      }
+
+      clampToRoom(camera.position);
+
+      // set camera rotation
+      camera.rotation.order = "YXZ";
+      camera.rotation.y = walk.yaw;
+      camera.rotation.x = walk.pitch;
+    }else{
+      controls.update();
+    }
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(tick);
+  }
+
+  // Resize
+  window.addEventListener("resize", setSize);
+  setSize();
+  tick();
+
+  // Quality toggle for very old devices (optional)
+  // If FPS is low, user can reduce pixel ratio in iOS settings or edit pr cap in code.
+</script>
+</body>
+</html>
