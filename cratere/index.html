@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <title>Museo 3D – Cratere Greco</title>
+  <style>
+    :root{--bg:#0b0f14;--panel:rgba(10,14,20,.62);--txt:#e7eefb;--muted:#a8b3c7;--danger:#fb7185;}
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+    #app{position:fixed;inset:0;overflow:hidden}
+    canvas{display:block;width:100%;height:100%;touch-action:none}
+    #hud{position:absolute;left:12px;right:12px;top:12px;display:flex;gap:10px;align-items:center;justify-content:space-between;pointer-events:none}
+    .chip{pointer-events:auto;background:var(--panel);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:10px 12px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+    #title{display:flex;flex-direction:column;gap:2px;min-width:210px}
+    #title b{font-size:14px}
+    #title span{font-size:12px;color:var(--muted)}
+    #controls{display:flex;gap:8px;align-items:center}
+    button{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.08);color:var(--txt);border-radius:12px;padding:9px 10px;font-weight:600;font-size:12px;cursor:pointer}
+    button.active{border-color:rgba(125,211,252,.55);box-shadow:0 0 0 2px rgba(125,211,252,.12) inset}
+    #hint{pointer-events:none;position:absolute;left:50%;transform:translateX(-50%);bottom:12px;max-width:min(720px,calc(100% - 24px));text-align:center;font-size:12px;color:var(--muted);line-height:1.35;background:rgba(10,14,20,.55);border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:10px 12px;backdrop-filter:blur(10px)}
+    #loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#070a0f;z-index:10}
+    #loading .box{width:min(520px,calc(100% - 28px));background:rgba(12,16,24,.75);border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.45);backdrop-filter:blur(12px)}
+    #loading h1{margin:0 0 6px 0;font-size:16px}
+    #loading p{margin:0 0 12px 0;font-size:12px;color:var(--muted);line-height:1.35}
+    .bar{height:10px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden;border:1px solid rgba(255,255,255,.10)}
+    .bar>div{height:100%;width:0%;background:linear-gradient(90deg,rgba(125,211,252,.92),rgba(251,113,133,.88));border-radius:999px}
+    .row{display:flex;gap:10px;align-items:center}
+    .pct{min-width:42px;text-align:right;font-variant-numeric:tabular-nums}
+    #pads{position:absolute;inset:0;pointer-events:none}
+    .pad{position:absolute;width:150px;height:150px;border-radius:50%;border:1px solid rgba(255,255,255,.14);background:rgba(10,14,20,.22);backdrop-filter:blur(6px);pointer-events:auto;touch-action:none;display:none}
+    .pad .knob{position:absolute;left:50%;top:50%;width:70px;height:70px;transform:translate(-50%,-50%);border-radius:50%;border:1px solid rgba(255,255,255,.16);background:rgba(125,211,252,.14)}
+    #padMove{left:16px;bottom:16px}
+    #padLook{right:16px;bottom:16px}
+    #padLook .knob{background:rgba(251,113,133,.14)}
+    code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="loading">
+    <div class="box">
+      <h1>Museo 3D – Caricamento</h1>
+      <p id="loadmsg">Sto preparando la sala e il cratere. Se resta fermo a 0%, spesso è perché la pagina è stata aperta da <code>file://</code>. Pubblica su GitHub Pages e ricarica.</p>
+      <div class="row">
+        <div class="bar" style="flex:1"><div id="bar"></div></div>
+        <div class="pct" id="pct">0%</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="hud">
+    <div id="title" class="chip">
+      <b>Museo 3D</b>
+      <span>Cratere greco su piedistallo</span>
+    </div>
+    <div id="controls" class="chip">
+      <button id="btnOrbit" class="active" type="button">Osserva</button>
+      <button id="btnWalk" type="button">Passeggia</button>
+      <button id="btnReset" type="button">Reset</button>
+    </div>
+  </div>
+
+  <div id="pads">
+    <div id="padMove" class="pad"><div class="knob"></div></div>
+    <div id="padLook" class="pad"><div class="knob"></div></div>
+  </div>
+
+  <div id="hint">Modalità <b>Osserva</b>: un dito ruota, due dita per zoom/pan. Se vuoi muoverti nella sala, passa a <b>Passeggia</b> (joystick).</div>
+  <canvas id="c"></canvas>
+</div>
+
+<!-- Compatibilità iPad: build non-module -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
+
+<script>
+(() => {
+  const canvas = document.getElementById("c");
+  const loadingEl = document.getElementById("loading");
+  const barEl = document.getElementById("bar");
+  const pctEl = document.getElementById("pct");
+  const hintEl = document.getElementById("hint");
+  const loadmsg = document.getElementById("loadmsg");
+  const btnOrbit = document.getElementById("btnOrbit");
+  const btnWalk  = document.getElementById("btnWalk");
+  const btnReset = document.getElementById("btnReset");
+  const padMove = document.getElementById("padMove");
+  const padLook = document.getElementById("padLook");
+
+  if (location.protocol === "file:") {
+    loadmsg.innerHTML = 'Stai aprendo la pagina come <code>file://</code>. Su iPad questo può bloccare il GLB. Pubblica su <b>GitHub Pages</b> (o hosting HTTPS) e ricarica.';
+  }
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+  renderer.setClearColor(0x070a0f, 1);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0x070a0f, 10, 60);
+
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 200);
+  const start = { pos: new THREE.Vector3(0, 2.2, 7.5), target: new THREE.Vector3(0, 1.55, 0) };
+  camera.position.copy(start.pos);
+
+  function setSize(){
+    const w = innerWidth, h = innerHeight;
+    const pr = Math.min(devicePixelRatio || 1, 2);
+    renderer.setPixelRatio(pr);
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+
+  const controls = new THREE.OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.06;
+  controls.target.copy(start.target);
+  controls.minDistance = 2.2;
+  controls.maxDistance = 18;
+  controls.maxPolarAngle = Math.PI * 0.495;
+  controls.minPolarAngle = 0.15;
+  controls.enablePan = true;
+
+  scene.add(new THREE.HemisphereLight(0xbfdcff, 0x0b0f14, 0.65));
+  const key = new THREE.DirectionalLight(0xffffff, 1.1); key.position.set(5, 8, 5); scene.add(key);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.55); fill.position.set(-6, 5, -4); scene.add(fill);
+  const spot = new THREE.SpotLight(0xffffff, 1.2, 25, Math.PI/7.5, 0.35, 1);
+  spot.position.set(0, 8, 0);
+  spot.target.position.set(0, 1.4, 0);
+  scene.add(spot, spot.target);
+
+  // Room
+  const floorMat = new THREE.MeshStandardMaterial({ color: 0x1a2432, roughness: 0.65, metalness: 0.05 });
+  const wallMat  = new THREE.MeshStandardMaterial({ color: 0x0f1724, roughness: 0.9, metalness: 0.0 });
+  const trimMat  = new THREE.MeshStandardMaterial({ color: 0x2a3b55, roughness: 0.6, metalness: 0.15 });
+
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), floorMat);
+  floor.rotation.x = -Math.PI/2;
+  scene.add(floor);
+
+  const grid = new THREE.GridHelper(40, 40, 0x2a3b55, 0x142033);
+  grid.material.opacity = 0.18; grid.material.transparent = true; grid.position.y = 0.001;
+  scene.add(grid);
+
+  const wallH = 6, wallT = 0.4, wallL = 40;
+  const mkWall = (w,h,d,x,y,z)=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), wallMat); m.position.set(x,y,z); return m; };
+  scene.add(mkWall(wallL, wallH, wallT, 0, wallH/2, -wallL/2));
+  scene.add(mkWall(wallL, wallH, wallT, 0, wallH/2,  wallL/2));
+  scene.add(mkWall(wallT, wallH, wallL, -wallL/2, wallH/2, 0));
+  scene.add(mkWall(wallT, wallH, wallL,  wallL/2, wallH/2, 0));
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(40,40), wallMat); ceil.rotation.x=Math.PI/2; ceil.position.y=wallH; scene.add(ceil);
+
+  // Pedestal
+  const pedestal = new THREE.Group(); scene.add(pedestal);
+  const pedBase = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.85, 0.35, 48), trimMat); pedBase.position.y=0.175;
+  const pedBody = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.45, 1.35, 56), new THREE.MeshStandardMaterial({ color: 0x202a3a, roughness: 0.45, metalness: 0.12 })); pedBody.position.y=1.025;
+  const pedTop  = new THREE.Mesh(new THREE.CylinderGeometry(1.55, 1.55, 0.18, 48), trimMat); pedTop.position.y=1.78;
+  pedestal.add(pedBase,pedBody,pedTop);
+
+  // Loading manager
+  const manager = new THREE.LoadingManager();
+  manager.onProgress = (url, loaded, total) => {
+    const v = total ? loaded/total : 0;
+    barEl.style.width = Math.round(v*100) + "%";
+    pctEl.textContent = Math.round(v*100) + "%";
+  };
+  manager.onLoad = () => { barEl.style.width="100%"; pctEl.textContent="100%"; setTimeout(()=>loadingEl.style.display="none", 250); };
+  manager.onError = () => { pctEl.textContent="ERRORE"; loadmsg.innerHTML = '<b style="color:var(--danger)">Errore caricando risorse.</b> Verifica che <code>assets/cratere-greco4.glb</code> esista e che la pagina sia in HTTPS.'; };
+
+  const loader = new THREE.GLTFLoader(manager);
+
+  loader.load("./assets/cratere-greco4.glb", (gltf)=>{
+    const crater = gltf.scene;
+
+    const box = new THREE.Box3().setFromObject(crater);
+    const size = new THREE.Vector3(); box.getSize(size);
+    const maxDim = Math.max(size.x,size.y,size.z) || 1;
+    crater.scale.setScalar(1.55 / maxDim);
+
+    const box2 = new THREE.Box3().setFromObject(crater);
+    const center = new THREE.Vector3(); box2.getCenter(center);
+    crater.position.sub(center);
+    crater.position.y += pedTop.position.y + 0.05;
+    crater.rotation.y = Math.PI*0.15;
+
+    scene.add(crater);
+
+    const c3 = new THREE.Vector3(); new THREE.Box3().setFromObject(crater).getCenter(c3);
+    controls.target.copy(c3);
+    controls.update();
+  }, undefined, (err)=>{
+    console.error(err);
+    pctEl.textContent="ERRORE";
+    loadmsg.innerHTML = '<b style="color:var(--danger)">Il modello non si carica.</b> Apri la pagina via <b>HTTPS</b> (GitHub Pages).';
+  });
+
+  // Walk mode
+  const walk = { enabled:false, yaw:0, pitch:0, move:new THREE.Vector2(0,0), look:new THREE.Vector2(0,0), speed:3.0, lookSpeed:1.6, height:1.65 };
+
+  function makePad(el, onChange){
+    const knob = el.querySelector(".knob");
+    let pid=null, sx=0, sy=0; const max=46;
+    const setKnob=(x,y)=>knob.style.transform=`translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+    el.addEventListener("pointerdown",(e)=>{pid=e.pointerId; el.setPointerCapture(pid); const r=el.getBoundingClientRect(); sx=r.left+r.width/2; sy=r.top+r.height/2; setKnob(0,0); onChange({x:0,y:0});},{passive:false});
+    el.addEventListener("pointermove",(e)=>{if(pid!==e.pointerId)return; const dx=e.clientX-sx, dy=e.clientY-sy; const len=Math.hypot(dx,dy); const k=len>max?max/len:1; const x=dx*k, y=dy*k; setKnob(x,y); onChange({x:x/max,y:y/max}); e.preventDefault();},{passive:false});
+    const end=(e)=>{if(pid!==e.pointerId && e.type!=="pointercancel")return; pid=null; setKnob(0,0); onChange({x:0,y:0});};
+    el.addEventListener("pointerup",end,{passive:true}); el.addEventListener("pointercancel",end,{passive:true});
+  }
+  makePad(padMove, (v)=>walk.move.set(v.x, -v.y));
+  makePad(padLook, (v)=>walk.look.set(v.x, -v.y));
+
+  const setMode = (mode)=>{
+    const isWalk = mode==="walk";
+    walk.enabled=isWalk;
+    btnOrbit.classList.toggle("active", !isWalk);
+    btnWalk.classList.toggle("active", isWalk);
+    controls.enabled=!isWalk;
+    padMove.style.display=isWalk?"block":"none";
+    padLook.style.display=isWalk?"block":"none";
+    hintEl.innerHTML = isWalk
+      ? 'Modalità <b>Passeggia</b>: joystick sinistro muove, destro guarda. Usa <b>Reset</b> per tornare alla vista iniziale.'
+      : 'Modalità <b>Osserva</b>: un dito ruota, due dita per zoom/pan. Se vuoi muoverti nella sala, passa a <b>Passeggia</b> (joystick).';
+    if(isWalk){
+      const dir=new THREE.Vector3(); camera.getWorldDirection(dir);
+      walk.yaw=Math.atan2(dir.x,dir.z);
+      walk.pitch=Math.asin(THREE.MathUtils.clamp(dir.y,-1,1));
+    }
+  };
+  btnOrbit.addEventListener("click",()=>setMode("orbit"));
+  btnWalk.addEventListener("click",()=>setMode("walk"));
+  btnReset.addEventListener("click",()=>{setMode("orbit"); camera.position.copy(start.pos); controls.target.copy(start.target); controls.update();});
+
+  const clock = new THREE.Clock();
+  const ROOM_HALF=19.2;
+  const clampToRoom=(p)=>{p.x=THREE.MathUtils.clamp(p.x,-ROOM_HALF,ROOM_HALF); p.z=THREE.MathUtils.clamp(p.z,-ROOM_HALF,ROOM_HALF); p.y=Math.max(walk.height,p.y);};
+
+  function tick(){
+    const dt=Math.min(0.033, clock.getDelta());
+    if(walk.enabled){
+      walk.yaw += walk.look.x*walk.lookSpeed*dt*1.8;
+      walk.pitch = THREE.MathUtils.clamp(walk.pitch + walk.look.y*walk.lookSpeed*dt*1.2, -1.1, 1.1);
+      const f=new THREE.Vector3(Math.sin(walk.yaw),0,Math.cos(walk.yaw));
+      const r=new THREE.Vector3(f.z,0,-f.x);
+      const mv=new THREE.Vector3().addScaledVector(f,walk.move.y).addScaledVector(r,walk.move.x);
+      if(mv.lengthSq()>1e-5) mv.normalize();
+      camera.position.addScaledVector(mv, walk.speed*dt);
+      camera.position.y=walk.height;
+
+      const dist=Math.hypot(camera.position.x,camera.position.z);
+      const minDist=2.35;
+      if(dist<minDist){ const k=minDist/Math.max(dist,1e-6); camera.position.x*=k; camera.position.z*=k; }
+
+      clampToRoom(camera.position);
+      camera.rotation.order="YXZ"; camera.rotation.y=walk.yaw; camera.rotation.x=walk.pitch;
+    } else controls.update();
+
+    renderer.render(scene,camera);
+    requestAnimationFrame(tick);
+  }
+
+  addEventListener("resize", setSize);
+  setSize();
+  tick();
+})();
+</script>
+</body>
+</html>
