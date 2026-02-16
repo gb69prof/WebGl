@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Leopardi — L'Infinito (lezione interattiva)</title>
+  <style>
+    :root{
+      --bg:#f3f8ff; --panel:rgba(255,255,255,.92); --ink:#16202a; --muted:#3b4a59;
+      --accent:#2b6cb0; --shadow:0 12px 36px rgba(0,0,0,.12);
+      --radius:18px; --border:1px solid rgba(20,40,60,.12); --pad:14px;
+      --font:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,"Noto Sans","Helvetica Neue",sans-serif;
+      --serif:ui-serif,"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;font-family:var(--font);color:var(--ink);
+      background:radial-gradient(1200px 800px at 60% 10%,#fff 0,var(--bg) 35%,#e7f1ff 70%,#dfefff 100%);
+      overflow:hidden;
+    }
+    header{
+      position:fixed;inset:0 0 auto 0;height:62px;display:flex;align-items:center;justify-content:space-between;
+      padding:10px 12px;background:rgba(255,255,255,.86);border-bottom:var(--border);
+      backdrop-filter:blur(12px);z-index:50;
+    }
+    .brand{display:flex;gap:10px;align-items:center;min-width:0}
+    .logo{
+      width:38px;height:38px;border-radius:14px;background:linear-gradient(135deg,#0ea5e9,#1d4ed8);
+      box-shadow:0 10px 22px rgba(29,78,216,.18);display:flex;align-items:center;justify-content:center;
+      color:#fff;font-weight:900;user-select:none;
+    }
+    .brand h1{margin:0;font-size:15px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:min(48vw,700px)}
+    .brand .sub{margin:0;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:min(48vw,700px)}
+    .rightbar{display:flex;gap:8px;align-items:center}
+    button,.chip{
+      appearance:none;border:var(--border);background:rgba(255,255,255,.92);color:var(--ink);
+      border-radius:999px;padding:9px 12px;font-weight:700;font-size:13px;
+      box-shadow:0 8px 18px rgba(0,0,0,.06);cursor:pointer;touch-action:manipulation;
+    }
+    button:active{transform:translateY(1px)}
+    .chip{cursor:default}
+    .chip strong{color:var(--accent)}
+    .btn-primary{
+      background:linear-gradient(135deg,rgba(14,165,233,.95),rgba(29,78,216,.95));
+      color:#fff;border:1px solid rgba(255,255,255,.26);
+    }
+
+    #app{
+      position:fixed;inset:62px 0 0 0;display:grid;grid-template-columns:1.05fr 1.4fr 1.05fr;
+      gap:12px;padding:12px;height:calc(100% - 62px);
+    }
+    .panel{
+      background:var(--panel);border:var(--border);border-radius:var(--radius);box-shadow:var(--shadow);
+      overflow:hidden;display:flex;flex-direction:column;min-height:0;
+    }
+    .panel .phead{
+      display:flex;align-items:center;justify-content:space-between;padding:12px;
+      background:rgba(235,245,255,.72);border-bottom:var(--border);
+    }
+    .panel .phead h2{margin:0;font-size:14px;letter-spacing:.2px}
+    .panel .phead .mini{font-size:12px;color:var(--muted);font-weight:700}
+    .panel .pbody{padding:var(--pad);overflow:auto;-webkit-overflow-scrolling:touch;min-height:0}
+
+    #glWrap{position:relative;background:rgba(255,255,255,.66)}
+    #glCanvas{width:100%;height:100%;display:block;touch-action:none;background:#0b1220}
+    .overlayHint{position:absolute;left:12px;right:12px;bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;pointer-events:none}
+    .hint{
+      pointer-events:none;background:rgba(255,255,255,.84);border:var(--border);border-radius:14px;
+      padding:10px 12px;font-size:12px;color:var(--muted);max-width:66%;box-shadow:0 12px 24px rgba(0,0,0,.12);
+    }
+    .hint b{color:var(--ink)}
+    .legend{pointer-events:none;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    .pill{
+      background:rgba(17,24,39,.60);color:rgba(255,255,255,.92);border:1px solid rgba(255,255,255,.16);
+      border-radius:999px;padding:8px 10px;font-size:12px;font-weight:800;
+    }
+    .pill span{opacity:.82;font-weight:700}
+
+    .steps{display:flex;flex-direction:column;gap:10px}
+    .step{
+      border:var(--border);background:rgba(255,255,255,.85);border-radius:16px;padding:12px;
+      display:flex;flex-direction:column;gap:6px;cursor:pointer;user-select:none;
+      transition:transform .12s ease, box-shadow .12s ease;
+    }
+    .step:active{transform:scale(.99)}
+    .step .k{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .badge{
+      font-size:11px;font-weight:900;color:#fff;background:linear-gradient(135deg,#0ea5e9,#1d4ed8);
+      border-radius:999px;padding:6px 10px;
+    }
+    .step h3{margin:0;font-size:14px}
+    .step p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.35}
+    .step.active{outline:3px solid rgba(14,165,233,.22);box-shadow:0 18px 40px rgba(14,165,233,.16)}
+
+    .imgbox{
+      border-radius:16px;overflow:hidden;border:var(--border);background:rgba(255,255,255,.6);
+      box-shadow:0 12px 26px rgba(0,0,0,.10);margin:10px 0 12px;
+    }
+    .imgbox img{width:100%;height:auto;display:block}
+    .note{
+      background:rgba(14,165,233,.08);border:1px solid rgba(14,165,233,.20);
+      padding:12px;border-radius:16px;color:var(--ink);line-height:1.45;font-size:13px;
+    }
+    .quote{
+      margin:10px 0 0;padding:12px 14px;border-left:4px solid rgba(29,78,216,.7);
+      background:rgba(255,255,255,.70);border-radius:14px;font-family:var(--serif);font-size:14px;line-height:1.55;
+    }
+    .hr{height:1px;background:rgba(20,40,60,.12);margin:12px 0}
+    .small{font-size:12px;color:var(--muted);line-height:1.45}
+
+    #tabs{
+      display:none;position:fixed;left:12px;right:12px;bottom:12px;z-index:60;
+      background:rgba(255,255,255,.92);border:var(--border);border-radius:999px;padding:6px;box-shadow:var(--shadow);gap:6px;
+    }
+    #tabs button{flex:1;border-radius:999px;padding:10px 10px;font-size:13px;box-shadow:none}
+    #tabs button.active{
+      background:linear-gradient(135deg,rgba(14,165,233,.95),rgba(29,78,216,.95));
+      color:#fff;border:1px solid rgba(255,255,255,.22);
+    }
+
+    #calibration{
+      position:fixed;inset:62px 0 0 0;display:none;z-index:80;pointer-events:none;
+      background:
+        linear-gradient(to right, rgba(255,255,255,0.0) 0, rgba(255,255,255,0.0) 33.333%, rgba(255,255,255,0.12) 33.333%, rgba(255,255,255,0.12) 33.7%, rgba(255,255,255,0.0) 33.7%, rgba(255,255,255,0.0) 66.666%, rgba(255,255,255,0.12) 66.666%, rgba(255,255,255,0.12) 67.0%, rgba(255,255,255,0.0) 67.0%, rgba(255,255,255,0.0) 100%),
+        repeating-linear-gradient(to right, rgba(255,255,255,0.18) 0, rgba(255,255,255,0.18) 1px, rgba(0,0,0,0) 1px, rgba(0,0,0,0) 60px),
+        repeating-linear-gradient(to bottom, rgba(255,255,255,0.18) 0, rgba(255,255,255,0.18) 1px, rgba(0,0,0,0) 1px, rgba(0,0,0,0) 60px);
+      mix-blend-mode:overlay;
+    }
+    #calibration .corners{position:absolute;inset:0}
+    .cross{position:absolute;width:28px;height:28px;border:2px solid rgba(255,255,255,.8);border-radius:8px}
+    .cross:before,.cross:after{
+      content:"";position:absolute;left:50%;top:50%;width:22px;height:2px;background:rgba(255,255,255,.85);
+      transform:translate(-50%,-50%);
+    }
+    .cross:after{width:2px;height:22px}
+
+    @media (max-width: 980px){
+      #app{grid-template-columns:1fr}
+      #tabs{display:flex}
+      .panel{display:none}
+      .panel.show{display:flex}
+    }
+    @media (min-width: 3000px){
+      header{height:76px}
+      #app{inset:76px 0 0 0}
+      .brand h1{font-size:18px}
+      .panel .phead h2{font-size:16px}
+      .step h3{font-size:16px}
+      .step p{font-size:14px}
+    }
+  </style>
+</head>
+<body>
+<header id="topbar">
+  <div class="brand" id="brandArea" title="Pressione lunga: calibrazione (parete)">
+    <div class="logo">∞</div>
+    <div style="min-width:0">
+      <h1>Leopardi — L’Infinito</h1>
+      <p class="sub">sensismo → vago/indefinito → pessimismo storico → esperienza dell’infinito</p>
+    </div>
+  </div>
+  <div class="rightbar">
+    <span class="chip">Tappa: <strong id="stepLabel">1</strong>/6</span>
+    <button id="btnPrev">◀</button>
+    <button id="btnNext" class="btn-primary">Avanti ▶</button>
+  </div>
+</header>
+
+<div id="app">
+  <section class="panel show" id="panelLeft">
+    <div class="phead"><h2>Percorso</h2><div class="mini">tocca una tappa</div></div>
+    <div class="pbody">
+      <div class="steps" id="steps"></div>
+      <div class="hr"></div>
+      <div class="small"><b>Parete 3 LIM:</b> sinistra = percorso, centro = scena WebGL, destra = contenuti.</div>
+    </div>
+  </section>
+
+  <section class="panel" id="panelCenter">
+    <div class="phead"><h2>Scena (WebGL)</h2><div class="mini" id="glStatus">caricamento…</div></div>
+    <div class="pbody" style="padding:0;position:relative" id="glWrap">
+      <canvas id="glCanvas"></canvas>
+      <div class="overlayHint">
+        <div class="hint"><b>Touch:</b> trascina = ruota • pinch = zoom • doppio tap sulla siepe (Tappa 6) = “apri” orizzonte</div>
+        <div class="legend">
+          <div class="pill">Oggetto: <span id="objLabel">Siepe</span></div>
+          <div class="pill">Stato: <span id="stateLabel">Limite</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="panelRight">
+    <div class="phead"><h2>Approfondisci</h2><div class="mini" id="topicLabel">Sensismo</div></div>
+    <div class="pbody" id="content"></div>
+  </section>
+</div>
+
+<div id="tabs">
+  <button id="tabLeft" class="active">Percorso</button>
+  <button id="tabCenter">Scena</button>
+  <button id="tabRight">Approfondisci</button>
+</div>
+
+<div id="calibration">
+  <div class="corners">
+    <div class="cross" style="left:12px;top:12px"></div>
+    <div class="cross" style="right:12px;top:12px"></div>
+    <div class="cross" style="left:12px;bottom:12px"></div>
+    <div class="cross" style="right:12px;bottom:12px"></div>
+  </div>
+</div>
+
+<script>
+/* Testo lezione (dal tuo docx) */
+const DOC_TEXT = `Guardiamo l’immagine: un colle erboso, una siepe che ostruisce l’orizzonte, un paesaggio che invita alla contemplazione. È esattamente lo scenario che Giacomo Leopardi descrive nei primi versi de “L’infinito”. Ma non è solo un luogo fisico. Questo spazio semplice, apparentemente insignificante, diventa il punto di partenza per uno dei più profondi viaggi poetici dell’Ottocento: il viaggio nell’infinito. La siepe non è più un limite, ma un invito: dove la vista si arresta, inizia l’immaginazione.
+
+La poesia nasce da una precisa filosofia: il sensismo, di matrice illuminista, secondo cui tutto ciò che l’uomo conosce deriva dai sensi. La mente non può creare senza aver prima visto, udito, toccato. Da qui, Leopardi parte per costruire la sua poetica. Ma questo contatto con la realtà non è sufficiente: il piacere che l’uomo cerca – assoluto, duraturo, infinito – non può mai essere soddisfatto da un’esperienza sensibile. Ecco il fondamento del dolore universale: la vita promette una felicità che non può mantenere.
+
+“L’infinito” è una poesia ancora ancorata a ciò che Leopardi definisce pessimismo storico. Secondo questa visione, l’uomo era originariamente felice, in armonia con la Natura, ma con il progresso della civiltà ha perso questa vicinanza, ha smarrito la spontaneità, si è corrotto. La società, la ragione, le convenzioni hanno allontanato l’uomo dal suo stato naturale e innocente. La sofferenza non è ancora vista come parte inevitabile dell’esistenza, ma come effetto di un allontanamento culturale e storico dalla Natura.
+Nell’infinito, infatti, la Natura è ancora madre benigna, capace di offrire all’uomo un rimedio temporaneo al dolore: l’immaginazione, le illusioni, la memoria, la contemplazione. Questo è il “mare” in cui il poeta “dolcemente naufraga”: una fuga verso l’infinito del pensiero che consola.
+
+Leopardi sceglie la forma dell’idillio, ma la rinnova. Non descrive più solo la natura in modo sereno e oggettivo, come nell’idillio greco, ma trasforma la natura in specchio dell’interiorità. Il colle e la siepe non sono solo elementi del paesaggio: sono luoghi dell’anima, trampolini verso un mondo altro. I versi, endecasillabi sciolti, fluiscono senza rima in una meditazione intensa e libera.
+
+Elemento centrale di questa poesia è la poetica del vago e dell’indefinito. Secondo Leopardi, ciò che è definito non suscita immaginazione. Ma se l’occhio si ferma su un ostacolo (la siepe), o l’orecchio percepisce un suono indistinto (il vento tra le foglie), allora l’immaginazione si attiva e può generare l’idea dell’infinito. È in questa esperienza estetica, quasi sensuale, che l’uomo può trovare un momento di felicità.
+
+“E il naufragar m’è dolce in questo mare”.`;
+
+/* 6 tappe con le tue immagini */
+const LESSON = [
+  {id:1, topic:"Sensismo", title:"Sensismo: il pensiero nasce dai sensi",
+   short:"Se non ho esperienza sensibile, non posso formulare un giudizio.",
+   html:`
+    <div class="note"><b>Idea-chiave:</b> l’uomo conosce attraverso i sensi. Il limite non è solo un muro: è la soglia da cui parte l’immaginazione.</div>
+    <div class="imgbox"><img src="assets/Sensismo.png" alt="Schema sensismo" /></div>
+    <div class="quote">Dove la vista si ferma, inizia un altro potere: l’immaginazione.</div>
+   `},
+  {id:2, topic:"Vago e indefinito", title:"Visione completa vs visione vaga",
+   short:"Quando la vista è incompleta, l’immaginazione si attiva.",
+   html:`
+    <div class="note"><b>Meccanismo:</b> ciò che è definito chiude; ciò che è incompleto apre. La siepe è un dispositivo poetico.</div>
+    <div class="imgbox"><img src="assets/TeoriaVisioneSuono.png" alt="Visione e suono" /></div>
+   `},
+  {id:3, topic:"Idillio moderno", title:"Idillio greco e idillio leopardiano",
+   short:"Il paesaggio diventa paesaggio interiore.",
+   html:`
+    <div class="note"><b>Idillio greco:</b> paesaggi precisi. <b>Leopardiano:</b> paesaggi indefiniti → immaginazione attiva.</div>
+    <div class="imgbox"><img src="assets/Idillio.png" alt="Idillio" /></div>
+   `},
+  {id:4, topic:"Pessimismo storico", title:"Pessimismo storico: natura ancora “madre benigna”",
+   short:"Il dolore è un prodotto della storia, non ancora della vita in sé.",
+   html:`
+    <div class="note">Qui la Natura consola ancora: <b>immaginazione</b> e <b>illusioni</b> come rimedio temporaneo.</div>
+    <div class="imgbox"><img src="assets/PessimismoStoricoSchema.png" alt="Pessimismo storico" /></div>
+   `},
+  {id:5, topic:"Processo alla Natura", title:"Processo alla Natura: accusa, difesa, rivelazione",
+   short:"Madre o nemica: la tensione resta aperta.",
+   html:`
+    <div class="note">Questo è un teatro concettuale: l’accusa, la difesa, e la rivelazione del ciclo di distruzione/conservazione.</div>
+    <div class="imgbox"><img src="assets/ProcessoNatura.png" alt="Processo alla Natura" /></div>
+   `},
+  {id:6, topic:"Il testo e l’esperienza", title:"L’Infinito: esperienza estetica (WebGL)",
+   short:"Doppio tap sulla siepe: l’orizzonte si apre.",
+   html:`
+    <div class="note"><b>Ora entra nella scena.</b> In Tappa 6, fai doppio tap sulla siepe: simbolicamente “si apre” l’oltre.</div>
+    <div class="quote" id="docQuote"></div>
+    <div class="small" id="docText"></div>
+   `}
+];
+
+const stepsEl = document.getElementById('steps');
+const contentEl = document.getElementById('content');
+const topicLabel = document.getElementById('topicLabel');
+const stepLabel = document.getElementById('stepLabel');
+const btnPrev = document.getElementById('btnPrev');
+const btnNext = document.getElementById('btnNext');
+
+let current = 1;
+
+function renderSteps(){
+  stepsEl.innerHTML = "";
+  LESSON.forEach(s=>{
+    const div=document.createElement('div');
+    div.className='step'+(s.id===current?' active':'');
+    div.innerHTML=`
+      <div class="k">
+        <span class="badge">Tappa ${s.id}</span>
+        <span class="small" style="font-weight:900;color:var(--accent)">${s.topic}</span>
+      </div>
+      <h3>${s.title}</h3>
+      <p>${s.short}</p>
+    `;
+    div.onclick=()=>goTo(s.id);
+    stepsEl.appendChild(div);
+  });
+}
+function makeExcerpt(text){
+  const parts=(text||"").split(/\n\n+/).map(x=>x.trim()).filter(Boolean);
+  return {quote:parts[0]||"", rest:parts.slice(1).join("\n\n")};
+}
+function renderContent(){
+  const s=LESSON.find(x=>x.id===current);
+  topicLabel.textContent=s.topic;
+  stepLabel.textContent=String(current);
+  contentEl.innerHTML=s.html;
+  if(current===6){
+    const ex=makeExcerpt(DOC_TEXT);
+    document.getElementById('docQuote').textContent=ex.quote;
+    document.getElementById('docText').textContent=ex.rest;
+  }
+  setWebGLStep(current);
+}
+function goTo(id){
+  current=Math.max(1,Math.min(6,id));
+  renderSteps(); renderContent();
+}
+btnPrev.onclick=()=>goTo(current-1);
+btnNext.onclick=()=>goTo(current+1);
+
+/* Tabs iPad */
+const panelLeft=document.getElementById('panelLeft');
+const panelCenter=document.getElementById('panelCenter');
+const panelRight=document.getElementById('panelRight');
+const tabLeft=document.getElementById('tabLeft');
+const tabCenter=document.getElementById('tabCenter');
+const tabRight=document.getElementById('tabRight');
+function setTab(which){
+  [panelLeft,panelCenter,panelRight].forEach(p=>p.classList.remove('show'));
+  [tabLeft,tabCenter,tabRight].forEach(b=>b.classList.remove('active'));
+  if(which==='left'){panelLeft.classList.add('show');tabLeft.classList.add('active')}
+  if(which==='center'){panelCenter.classList.add('show');tabCenter.classList.add('active')}
+  if(which==='right'){panelRight.classList.add('show');tabRight.classList.add('active')}
+}
+tabLeft.onclick=()=>setTab('left');
+tabCenter.onclick=()=>setTab('center');
+tabRight.onclick=()=>setTab('right');
+function autoTab(){
+  if(matchMedia("(max-width: 980px)").matches){
+    if(!panelLeft.classList.contains('show')&&!panelCenter.classList.contains('show')&&!panelRight.classList.contains('show')) setTab('left');
+  } else {
+    panelLeft.classList.add('show');panelCenter.classList.add('show');panelRight.classList.add('show');
+  }
+}
+addEventListener('resize',autoTab); autoTab();
+
+/* Calibrazione parete: pressione lunga sul titolo */
+const cal=document.getElementById('calibration');
+const brand=document.getElementById('brandArea');
+let pressTimer=null;
+function toggleCalibration(){ cal.style.display = (cal.style.display==='block')?'none':'block'; }
+brand.addEventListener('pointerdown',()=>{ pressTimer=setTimeout(toggleCalibration,700); });
+brand.addEventListener('pointerup',()=>clearTimeout(pressTimer));
+brand.addEventListener('pointercancel',()=>clearTimeout(pressTimer));
+
+/* ===== WebGL RAW: scena “colle + siepe + cielo” ===== */
+const canvas=document.getElementById('glCanvas');
+const glStatus=document.getElementById('glStatus');
+const objLabel=document.getElementById('objLabel');
+const stateLabel=document.getElementById('stateLabel');
+let gl=null, prog=null;
+let uMVP=null,uModel=null,uTime=null,uKind=null,uOpen=null;
+let aPos=null,aUV=null;
+let time0=performance.now();
+let yaw=-0.65,pitch=-0.15,dist=8.0;
+let target=[0,0.8,0];
+let openHorizon=0.0;
+
+function createShader(gl,type,src){
+  const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){ console.error(gl.getShaderInfoLog(s)); return null; }
+  return s;
+}
+function createProgram(gl,vsSrc,fsSrc){
+  const vs=createShader(gl,gl.VERTEX_SHADER,vsSrc);
+  const fs=createShader(gl,gl.FRAGMENT_SHADER,fsSrc);
+  const p=gl.createProgram(); gl.attachShader(p,vs); gl.attachShader(p,fs); gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS)){ console.error(gl.getProgramInfoLog(p)); return null; }
+  return p;
+}
+
+/* mini-math */
+const I=()=>[1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+const mul=(a,b)=>{const o=new Array(16).fill(0);for(let r=0;r<4;r++)for(let c=0;c<4;c++)for(let k=0;k<4;k++)o[r*4+c]+=a[r*4+k]*b[k*4+c];return o;}
+const T=(x,y,z)=>{const m=I();m[12]=x;m[13]=y;m[14]=z;return m;}
+const S=(x,y,z)=>{const m=I();m[0]=x;m[5]=y;m[10]=z;return m;}
+const Rx=a=>{const c=Math.cos(a),s=Math.sin(a);return [1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1];}
+const P=(fovy,asp,n,f)=>{const t=1/Math.tan(fovy/2),nf=1/(n-f);return [t/asp,0,0,0, 0,t,0,0, 0,0,(f+n)*nf,-1, 0,0,(2*f*n)*nf,0];}
+const nrm=v=>{const l=Math.hypot(v[0],v[1],v[2])||1;return [v[0]/l,v[1]/l,v[2]/l];}
+const cr=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const look=(e,t,u)=>{
+  const z=nrm([e[0]-t[0],e[1]-t[1],e[2]-t[2]]);
+  const x=nrm(cr(u,z)); const y=cr(z,x);
+  return [x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0, -dot(x,e),-dot(y,e),-dot(z,e),1];
+};
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
+function resize(){
+  const dpr=Math.min(2,devicePixelRatio||1);
+  const r=canvas.getBoundingClientRect();
+  const w=Math.max(1,Math.floor(r.width*dpr));
+  const h=Math.max(1,Math.floor(r.height*dpr));
+  if(canvas.width!==w||canvas.height!==h){ canvas.width=w; canvas.height=h; if(gl)gl.viewport(0,0,w,h); }
+}
+
+function mvp(model){
+  const asp=canvas.width/canvas.height;
+  const proj=P(Math.PI/3.2,asp,0.1,80.0);
+  const ex=target[0]+dist*Math.cos(pitch)*Math.cos(yaw);
+  const ey=target[1]+dist*Math.sin(-pitch);
+  const ez=target[2]+dist*Math.cos(pitch)*Math.sin(yaw);
+  return mul(mul(proj,look([ex,ey,ez],target,[0,1,0])),model);
+}
+
+function initGL(){
+  gl=canvas.getContext('webgl',{antialias:true,alpha:false});
+  if(!gl){ glStatus.textContent="WebGL non disponibile"; return; }
+
+  const vs=`
+    attribute vec3 aPos; attribute vec2 aUV;
+    uniform mat4 uMVP; uniform mat4 uModel;
+    varying vec2 vUV;
+    void main(){ vUV=aUV; gl_Position=uMVP*vec4(aPos,1.0); }
+  `;
+  const fs=`
+    precision mediump float;
+    varying vec2 vUV;
+    uniform float uTime,uKind,uOpen;
+    float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123); }
+    float noise(vec2 p){
+      vec2 i=floor(p), f=fract(p);
+      float a=hash(i), b=hash(i+vec2(1,0)), c=hash(i+vec2(0,1)), d=hash(i+vec2(1,1));
+      vec2 u=f*f*(3.0-2.0*f);
+      return mix(a,b,u.x)+(c-a)*u.y*(1.0-u.x)+(d-b)*u.x*u.y;
+    }
+    void main(){
+      if(uKind<0.5){
+        vec3 top=mix(vec3(0.03,0.06,0.12), vec3(0.15,0.35,0.65), 0.35*uOpen);
+        vec3 bot=mix(vec3(0.02,0.02,0.04), vec3(0.75,0.88,1.00), 0.55*uOpen);
+        vec3 col=mix(bot,top,clamp(vUV.y,0.0,1.0));
+        float n=noise(vUV*vec2(420.0,240.0));
+        float stars=smoothstep(0.985,0.999,n)*(1.0-uOpen);
+        col+=stars*vec3(0.9,0.9,1.0);
+        vec2 sun=vUV-vec2(0.72,0.66);
+        float glow=exp(-dot(sun,sun)*18.0)*uOpen;
+        col+=glow*vec3(1.0,0.85,0.55);
+        gl_FragColor=vec4(col,1.0); return;
+      }
+      if(uKind<1.5){
+        float g=noise(vUV*vec2(18.0,18.0));
+        vec3 soil=mix(vec3(0.18,0.14,0.10), vec3(0.34,0.28,0.20), g);
+        float fog=smoothstep(0.15,0.85,vUV.y);
+        vec3 fogCol=mix(vec3(0.10,0.18,0.26), vec3(0.85,0.92,1.0), uOpen);
+        vec3 col=mix(soil,fogCol,fog*(0.35+0.25*uOpen));
+        gl_FragColor=vec4(col,1.0); return;
+      }
+      float leaf=noise(vUV*vec2(50.0,24.0)+vec2(0.0,uTime*0.02));
+      vec3 hedge=mix(vec3(0.06,0.18,0.10), vec3(0.10,0.30,0.14), leaf);
+      float gap=smoothstep(0.35,0.48,abs(vUV.x-0.5));
+      float openness=mix(1.0,gap,uOpen);
+      float alpha=mix(1.0,0.10,uOpen)*openness;
+      float edge=smoothstep(0.40,0.48,abs(vUV.x-0.5))*uOpen;
+      hedge+=edge*vec3(0.25,0.55,0.35);
+      gl_FragColor=vec4(hedge,alpha);
+    }
+  `;
+  prog=createProgram(gl,vs,fs);
+  gl.useProgram(prog);
+  aPos=gl.getAttribLocation(prog,'aPos');
+  aUV=gl.getAttribLocation(prog,'aUV');
+  uMVP=gl.getUniformLocation(prog,'uMVP');
+  uModel=gl.getUniformLocation(prog,'uModel');
+  uTime=gl.getUniformLocation(prog,'uTime');
+  uKind=gl.getUniformLocation(prog,'uKind');
+  uOpen=gl.getUniformLocation(prog,'uOpen');
+
+  const quad=new Float32Array([
+    -1,-1,0, 0,0,  1,-1,0, 1,0,  1, 1,0, 1,1,  -1, 1,0, 0,1
+  ]);
+  const idx=new Uint16Array([0,1,2, 0,2,3]);
+  const vbo=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vbo); gl.bufferData(gl.ARRAY_BUFFER,quad,gl.STATIC_DRAW);
+  const ibo=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,idx,gl.STATIC_DRAW);
+
+  gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos,3,gl.FLOAT,false,20,0);
+  gl.enableVertexAttribArray(aUV);  gl.vertexAttribPointer(aUV,2,gl.FLOAT,false,20,12);
+
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+
+  glStatus.textContent="pronto"; resize(); requestAnimationFrame(draw);
+}
+
+function draw(now){
+  if(!gl) return;
+  resize();
+  const t=(now-time0)/1000;
+  gl.clearColor(0.03,0.05,0.09,1);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(prog);
+  gl.uniform1f(uTime,t);
+  gl.uniform1f(uOpen,openHorizon);
+
+  // Sky
+  gl.uniform1f(uKind,0.0);
+  let model=mul(T(0,1.5,-8.0), S(18,10,1));
+  gl.uniformMatrix4fv(uModel,false,new Float32Array(model));
+  gl.uniformMatrix4fv(uMVP,false,new Float32Array(mvp(model)));
+  gl.drawElements(gl.TRIANGLES,6,gl.UNSIGNED_SHORT,0);
+
+  // Ground
+  gl.uniform1f(uKind,1.0);
+  model=mul(T(0,0,0), mul(Rx(-0.95), S(12,12,1)));
+  gl.uniformMatrix4fv(uModel,false,new Float32Array(model));
+  gl.uniformMatrix4fv(uMVP,false,new Float32Array(mvp(model)));
+  gl.drawElements(gl.TRIANGLES,6,gl.UNSIGNED_SHORT,0);
+
+  // Hedge
+  gl.uniform1f(uKind,2.0);
+  const widen=1.0+0.10*openHorizon;
+  model=mul(T(0,1.0,-1.7), S(6*widen,2.2,1));
+  gl.uniformMatrix4fv(uModel,false,new Float32Array(model));
+  gl.uniformMatrix4fv(uMVP,false,new Float32Array(mvp(model)));
+  gl.drawElements(gl.TRIANGLES,6,gl.UNSIGNED_SHORT,0);
+
+  requestAnimationFrame(draw);
+}
+
+/* gesture */
+let pointers=new Map(); let lastTapTime=0; let lastTapPos=null;
+canvas.addEventListener('pointerdown',e=>{
+  canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  const now=performance.now();
+  if(now-lastTapTime<320){
+    const dx=lastTapPos?(e.clientX-lastTapPos.x):999;
+    const dy=lastTapPos?(e.clientY-lastTapPos.y):999;
+    if(dx*dx+dy*dy<900) toggleOpen();
+  }
+  lastTapTime=now; lastTapPos={x:e.clientX,y:e.clientY};
+});
+canvas.addEventListener('pointermove',e=>{
+  if(!pointers.has(e.pointerId)) return;
+  const prev=pointers.get(e.pointerId);
+  const cur={x:e.clientX,y:e.clientY};
+  pointers.set(e.pointerId,cur);
+  if(pointers.size===1){
+    const dx=cur.x-prev.x, dy=cur.y-prev.y;
+    yaw+=dx*0.0052; pitch+=dy*0.0042; pitch=clamp(pitch,-0.55,0.35);
+  } else if(pointers.size===2){
+    const pts=[...pointers.values()];
+    const d=Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
+    if(!canvas._pinchD) canvas._pinchD=d;
+    const dd=d-canvas._pinchD; canvas._pinchD=d;
+    dist=clamp(dist-dd*0.01,4.5,14.0);
+  }
+});
+function endPtr(e){ pointers.delete(e.pointerId); if(pointers.size<2) canvas._pinchD=null; }
+canvas.addEventListener('pointerup',endPtr);
+canvas.addEventListener('pointercancel',endPtr);
+
+function setWebGLStep(step){
+  if(step<6){ openHorizon=Math.max(0,openHorizon-0.08); stateLabel.textContent="Limite"; }
+  else { stateLabel.textContent=openHorizon>0.5?"Apertura":"Limite"; }
+  objLabel.textContent="Siepe";
+}
+function toggleOpen(){
+  if(current!==6){ stateLabel.textContent="Vai alla Tappa 6"; return; }
+  const targetOpen=(openHorizon>0.5)?0.0:1.0;
+  const start=openHorizon; const t0=performance.now(); const dur=520;
+  function anim(now){
+    const k=clamp((now-t0)/dur,0,1);
+    const s=k*k*(3-2*k);
+    openHorizon=start+(targetOpen-start)*s;
+    stateLabel.textContent=openHorizon>0.5?"Apertura":"Limite";
+    if(k<1) requestAnimationFrame(anim);
+  }
+  requestAnimationFrame(anim);
+}
+
+/* Boot */
+renderSteps(); renderContent(); initGL(); goTo(1);
+</script>
+</body>
+</html>
