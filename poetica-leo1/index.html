@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Leopardi — Il vago e l’indefinito</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+</head>
+<body>
+  <div id="container">
+    <div id="scene-wrap">
+      <div id="scene-container"></div>
+
+      <!-- Overlay controls (touch) -->
+      <div id="hud">
+        <div id="hint">
+          <div class="hint-title">Navigazione</div>
+          <div class="hint-text">Touch: trascina per guardare • joystick per muoverti • doppio tap per reset</div>
+          <div class="hint-text">Tastiera: WASD • Shift = più veloce</div>
+        </div>
+
+        <div id="joystick">
+          <div id="joy-base">
+            <div id="joy-stick"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside id="ui">
+      <section id="display" class="card">
+        <h2>Livello di immaginazione</h2>
+        <div id="meter">
+          <div id="bar"></div>
+          <div id="glow"></div>
+        </div>
+        <div id="readout">
+          <span id="percent">0%</span>
+          <span id="state">visibile</span>
+        </div>
+      </section>
+
+      <section id="text-panel" class="card">
+        <h3>Spiegazione</h3>
+        <p id="dynamic-text"></p>
+        <div class="divider"></div>
+        <p class="micro">
+          Qui l’ostacolo non è “un problema”: è un generatore di oltre. Più il reale si chiude, più l’immaginazione apre.
+        </p>
+      </section>
+    </aside>
+  </div>
+
+  <script src="js/main.js"></script>
+</body>
+</html>
