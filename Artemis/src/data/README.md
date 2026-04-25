@@ -1,0 +1,1 @@
+This prototype uses public Artemis II mission-profile milestones as scaled keyframes. For exact replay, export Orion/Moon/Sun state vectors from NASA/JPL Horizons or NASA SVS flight-derived ephemeris, then replace the keyFrames array in src/main.jsx with parsed vectors.
